@@ -59,5 +59,13 @@ service-account.json
 *-service-account.json
 *.serviceaccount.json
 functions/service-account.json
+
+# Firebase config files with credentials
+GoogleService-Info.plist
+google-services.json
+google-services.json.bak
+
+# Claude Code local settings
+.claude/settings.local.json
 ios/
 .vercel
