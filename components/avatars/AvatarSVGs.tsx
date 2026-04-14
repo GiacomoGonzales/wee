@@ -68,7 +68,7 @@ export const RobotAvatar: React.FC<AvatarProps> = ({ size = 80, backgroundColor 
 );
 
 // Avatar Ninja
-export const NinjaAvatar: React.FC<AvatarProps> = ({ size = 80, backgroundColor = '#7C3AED' }) => (
+export const NinjaAvatar: React.FC<AvatarProps> = ({ size = 80, backgroundColor = '#E5A020' }) => (
   <View style={[
     styles.avatarContainer,
     { 
@@ -118,6 +118,6 @@ export const predefinedAvatars = [
   { id: 'female', name: 'Femenino', component: FemaleAvatar, color: '#EC4899' },
   { id: 'masked', name: 'Enmascarado', component: MaskedAvatar, color: '#1F2937' },
   { id: 'robot', name: 'Robot', component: RobotAvatar, color: '#6366F1' },
-  { id: 'ninja', name: 'Ninja', component: NinjaAvatar, color: '#7C3AED' },
+  { id: 'ninja', name: 'Ninja', component: NinjaAvatar, color: '#E5A020' },
   { id: 'cat', name: 'Gato', component: CatAvatar, color: '#F59E0B' },
 ];

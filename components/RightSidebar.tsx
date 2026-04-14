@@ -43,7 +43,7 @@ const RightSidebar: React.FC = () => {
         <Ionicons name="search" size={18} color={theme.colors.textSecondary} />
         <TextInput
           style={[styles.searchInput, { color: theme.colors.text }]}
-          placeholder="Buscar en HideTok"
+          placeholder="Buscar en Weë"
           placeholderTextColor={theme.colors.textSecondary}
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -170,7 +170,7 @@ const RightSidebar: React.FC = () => {
       {/* Footer Links */}
       <View style={styles.footer}>
         <Text style={[styles.footerText, { color: theme.colors.textSecondary }]}>
-          Términos · Privacidad · © 2025 HideTok
+          Términos · Privacidad · © 2025 Weë
         </Text>
       </View>
     </ScrollView>

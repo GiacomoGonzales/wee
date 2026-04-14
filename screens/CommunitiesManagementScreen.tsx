@@ -9,6 +9,9 @@ import {
   RefreshControl,
   Alert,
   TextInput,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -49,6 +52,10 @@ const CommunitiesManagementScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [joiningCommunity, setJoiningCommunity] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newDesc, setNewDesc] = useState('');
+  const [creating, setCreating] = useState(false);
 
   // Comunidades a las que el usuario pertenece
   const joinedCommunityIds = userProfile?.joinedCommunities || [];
@@ -258,9 +265,11 @@ const CommunitiesManagementScreen: React.FC = () => {
       )
     : communities;
 
-  // Separar comunidades unidas y disponibles
-  const joinedCommunities = filtered.filter(c => c.id && joinedCommunityIds.includes(c.id));
-  const availableCommunities = filtered.filter(c => c.id && !joinedCommunityIds.includes(c.id));
+  // Separar comunidades: mis creaciones, unidas, descubrir
+  const myUid = userProfile?.uid || user?.uid;
+  const myCommunities = filtered.filter(c => c.id && (c as any).createdBy === myUid);
+  const joinedCommunities = filtered.filter(c => c.id && joinedCommunityIds.includes(c.id) && (c as any).createdBy !== myUid);
+  const availableCommunities = filtered.filter(c => c.id && !joinedCommunityIds.includes(c.id) && (c as any).createdBy !== myUid);
 
   if (loading) {
     return (
@@ -291,7 +300,13 @@ const CommunitiesManagementScreen: React.FC = () => {
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
           Comunidades
         </Text>
-        <View style={styles.headerRight} />
+        <TouchableOpacity
+          style={[styles.createCommunityBtn, { backgroundColor: theme.colors.accent }]}
+          onPress={() => setShowCreateModal(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="add" size={20} color="#fff" />
+        </TouchableOpacity>
       </View>
 
       {/* Buscador */}
@@ -316,12 +331,17 @@ const CommunitiesManagementScreen: React.FC = () => {
 
       <FlatList
         data={[
-          { type: 'header-joined', count: joinedCommunities.length },
+          ...(myCommunities.length > 0 ? [{ type: 'header-mine', count: myCommunities.length }] : []),
+          ...myCommunities.map(c => ({ type: 'community', data: c })),
+          ...(joinedCommunities.length > 0 ? [{ type: 'header-joined', count: joinedCommunities.length }] : []),
           ...joinedCommunities.map(c => ({ type: 'community', data: c })),
           { type: 'header-available', count: availableCommunities.length },
           ...availableCommunities.map(c => ({ type: 'community', data: c })),
         ]}
         renderItem={({ item }) => {
+          if (item.type === 'header-mine') {
+            return renderSectionHeader('Mis comunidades', item.count as number);
+          }
           if (item.type === 'header-joined') {
             return renderSectionHeader('Comunidades unidas', item.count as number);
           }
@@ -331,9 +351,7 @@ const CommunitiesManagementScreen: React.FC = () => {
           return renderCommunityItem({ item: (item as any).data });
         }}
         keyExtractor={(item, index) => {
-          if (item.type === 'header-joined' || item.type === 'header-available') {
-            return item.type;
-          }
+          if (item.type?.startsWith('header')) return item.type;
           return (item as any).data?.id || `community-${index}`;
         }}
         contentContainerStyle={styles.listContent}
@@ -355,6 +373,91 @@ const CommunitiesManagementScreen: React.FC = () => {
           </View>
         }
       />
+
+      {/* Create community — fullscreen modal */}
+      <Modal
+        visible={showCreateModal}
+        animationType="fade"
+        onRequestClose={() => setShowCreateModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1, backgroundColor: theme.colors.background }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          {/* Header */}
+          <View style={[styles.modalHeader, { paddingTop: insets.top + SPACING.sm, borderBottomColor: theme.colors.border }]}>
+            <TouchableOpacity onPress={() => setShowCreateModal(false)}>
+              <Ionicons name="close" size={26} color={theme.colors.text} />
+            </TouchableOpacity>
+            <Text style={[styles.modalHeaderTitle, { color: theme.colors.text }]}>Nueva comunidad</Text>
+            <TouchableOpacity
+              style={[styles.modalHeaderBtn, { backgroundColor: '#F5B731', opacity: newName.trim() ? 1 : 0.4 }]}
+              onPress={async () => {
+                if (!newName.trim() || !user || creating) return;
+                setCreating(true);
+                try {
+                  const communityId = await communityService.createCommunity({
+                    name: newName.trim(),
+                    description: newDesc.trim() || `Comunidad de ${newName.trim()}`,
+                    icon: 'people',
+                    rules: [],
+                    createdBy: userProfile?.uid || user.uid,
+                  });
+                  // Auto-join the community
+                  if (communityId) {
+                    await communityService.joinCommunity(user.uid, communityId);
+                    const newJoined = [...joinedCommunityIds, communityId];
+                    updateLocalProfile({ joinedCommunities: newJoined });
+                  }
+                  setNewName('');
+                  setNewDesc('');
+                  setShowCreateModal(false);
+                  handleRefresh();
+                } catch (e: any) {
+                  Alert.alert('Error', e.message || 'No se pudo crear la comunidad');
+                }
+                setCreating(false);
+              }}
+              disabled={!newName.trim() || creating}
+            >
+              {creating ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.modalHeaderBtnText}>Crear</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Form */}
+          <View style={styles.modalForm}>
+            <View style={[styles.modalField, { backgroundColor: theme.colors.surface }]}>
+              <Text style={[styles.modalLabel, { color: theme.colors.textSecondary }]}>Nombre</Text>
+              <TextInput
+                style={[styles.modalFieldInput, { color: theme.colors.text }]}
+                placeholder="Ej: Amantes del café"
+                placeholderTextColor={theme.colors.textSecondary}
+                value={newName}
+                onChangeText={setNewName}
+                maxLength={40}
+                autoFocus
+              />
+            </View>
+
+            <View style={[styles.modalField, { backgroundColor: theme.colors.surface }]}>
+              <Text style={[styles.modalLabel, { color: theme.colors.textSecondary }]}>Descripción</Text>
+              <TextInput
+                style={[styles.modalFieldInput, styles.modalFieldMulti, { color: theme.colors.text }]}
+                placeholder="¿De qué trata esta comunidad?"
+                placeholderTextColor={theme.colors.textSecondary}
+                value={newDesc}
+                onChangeText={setNewDesc}
+                multiline
+                maxLength={200}
+              />
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 };
@@ -387,6 +490,56 @@ const styles = StyleSheet.create({
   headerRight: {
     width: 40,
   },
+  createCommunityBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: SPACING.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  modalHeaderTitle: {
+    fontSize: FONT_SIZE.lg,
+    fontWeight: FONT_WEIGHT.bold,
+  },
+  modalHeaderBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: BORDER_RADIUS.full,
+  },
+  modalHeaderBtnText: {
+    color: '#fff',
+    fontSize: FONT_SIZE.sm,
+    fontWeight: FONT_WEIGHT.bold,
+  },
+  modalForm: {
+    padding: SPACING.lg,
+    gap: SPACING.md,
+  },
+  modalField: {
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+  },
+  modalLabel: {
+    fontSize: FONT_SIZE.xs,
+    fontWeight: FONT_WEIGHT.medium,
+    marginBottom: SPACING.xs,
+  },
+  modalFieldInput: {
+    fontSize: FONT_SIZE.base,
+    padding: 0,
+  },
+  modalFieldMulti: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
   searchContainer: {
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.sm,
@@ -410,7 +563,7 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.base,
   },
   listContent: {
-    paddingBottom: SPACING.xl,
+    paddingBottom: 85,
   },
   sectionHeader: {
     flexDirection: 'row',

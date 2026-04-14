@@ -4,21 +4,25 @@ import { usersService, UserProfile } from '../services/firestoreService';
 import { Timestamp } from 'firebase/firestore';
 import { updateUserCache } from '../hooks/useUserById';
 
-type ProfileType = 'real' | 'hidi';
+type ProfileType = 'real' | 'hidi' | 'biz';
 
 interface UserProfileContextType {
-  userProfile: UserProfile | null; // Perfil activo (real o hidi)
+  userProfile: UserProfile | null; // Perfil activo (real, hidi o biz)
   realProfile: UserProfile | null;
   hidiProfile: UserProfile | null;
+  bizProfile: UserProfile | null;
   activeProfileType: ProfileType;
   hasHidiProfile: boolean;
+  hasBizProfile: boolean;
   loading: boolean;
   error: string | null;
   updateProfile: (updates: Partial<Omit<UserProfile, 'id' | 'uid' | 'createdAt'>>) => Promise<void>;
   updateLocalProfile: (updates: Partial<UserProfile>) => void;
   refreshProfile: () => void;
   switchIdentity: () => void;
+  switchToBiz: () => void;
   setHidiProfile: (profile: UserProfile) => void;
+  setBizProfile: (profile: UserProfile) => void;
 }
 
 const UserProfileContext = createContext<UserProfileContextType | undefined>(undefined);
@@ -39,19 +43,25 @@ export const UserProfileProvider: React.FC<UserProfileProviderProps> = ({ childr
   const { user } = useAuth();
   const [realProfile, setRealProfile] = useState<UserProfile | null>(null);
   const [hidiProfile, setHidiProfileState] = useState<UserProfile | null>(null);
+  const [bizProfile, setBizProfileState] = useState<UserProfile | null>(null);
   const [activeProfileType, setActiveProfileType] = useState<ProfileType>('real');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Perfil activo basado en el tipo seleccionado
-  const userProfile = activeProfileType === 'hidi' && hidiProfile ? hidiProfile : realProfile;
+  const userProfile = activeProfileType === 'biz' && bizProfile
+    ? bizProfile
+    : activeProfileType === 'hidi' && hidiProfile
+      ? hidiProfile
+      : realProfile;
 
   useEffect(() => {
     const loadUserProfiles = async () => {
       if (!user) {
         setRealProfile(null);
         setHidiProfileState(null);
+        setBizProfileState(null);
         setActiveProfileType('real');
         setLoading(false);
         return;
@@ -137,11 +147,35 @@ export const UserProfileProvider: React.FC<UserProfileProviderProps> = ({ childr
           console.log('🎭 [UserProfileContext] Error cargando perfil HIDI (ignorado):', hidiErr);
           setHidiProfileState(null);
         }
+
+        // Intentar cargar perfil BIZ
+        try {
+          // Buscar negocios del usuario y su perfil biz
+          const { weeBizService } = require('../services/weeBizService');
+          const biz = await weeBizService.getBusinessByOwner(user.uid);
+          if (biz?.id) {
+            const bizUserProfile = await usersService.getBizProfile(biz.id);
+            if (bizUserProfile) {
+              console.log('🏢 [UserProfileContext] Perfil BIZ cargado:', bizUserProfile.displayName);
+              setBizProfileState(bizUserProfile);
+              updateUserCache(`biz_${biz.id}`, bizUserProfile);
+            } else {
+              console.log('🏢 [UserProfileContext] Negocio existe pero no tiene perfil BIZ aún');
+              setBizProfileState(null);
+            }
+          } else {
+            setBizProfileState(null);
+          }
+        } catch (bizErr) {
+          console.log('🏢 [UserProfileContext] Error cargando perfil BIZ (ignorado):', bizErr);
+          setBizProfileState(null);
+        }
       } catch (err) {
         console.error('❌ [UserProfileContext] Error loading user profile:', err);
         setError('Error al cargar el perfil de usuario');
         setRealProfile(null);
         setHidiProfileState(null);
+        setBizProfileState(null);
       } finally {
         setLoading(false);
       }
@@ -172,7 +206,10 @@ export const UserProfileProvider: React.FC<UserProfileProviderProps> = ({ childr
 
       // Actualizar estado local inmediatamente
       const newProfile = { ...currentProfile, ...updatesWithTimestamp };
-      if (activeProfileType === 'hidi') {
+      if (activeProfileType === 'biz') {
+        setBizProfileState(newProfile);
+        updateUserCache(currentProfile.uid, newProfile);
+      } else if (activeProfileType === 'hidi') {
         setHidiProfileState(newProfile);
         updateUserCache(`hidi_${user.uid}`, newProfile);
       } else {
@@ -201,7 +238,10 @@ export const UserProfileProvider: React.FC<UserProfileProviderProps> = ({ childr
     }
 
     const newProfile = { ...userProfile, ...updates };
-    if (activeProfileType === 'hidi') {
+    if (activeProfileType === 'biz') {
+      setBizProfileState(newProfile);
+      updateUserCache(userProfile.uid, updates);
+    } else if (activeProfileType === 'hidi') {
       setHidiProfileState(newProfile);
       updateUserCache(`hidi_${user.uid}`, updates);
     } else {
@@ -227,6 +267,18 @@ export const UserProfileProvider: React.FC<UserProfileProviderProps> = ({ childr
     });
   }, [hidiProfile]);
 
+  const switchToBiz = useCallback(() => {
+    if (!bizProfile) {
+      console.warn('⚠️ [UserProfileContext] No hay perfil BIZ para cambiar');
+      return;
+    }
+    setActiveProfileType(prev => {
+      const next = prev === 'biz' ? 'real' : 'biz';
+      console.log(`🏢 [UserProfileContext] Cambiando identidad: ${prev} → ${next}`);
+      return next;
+    });
+  }, [bizProfile]);
+
   // Setter público para que HidiCreationScreen pueda establecer el perfil recién creado
   const setHidiProfile = useCallback((profile: UserProfile) => {
     setHidiProfileState(profile);
@@ -235,19 +287,28 @@ export const UserProfileProvider: React.FC<UserProfileProviderProps> = ({ childr
     }
   }, [user]);
 
+  const setBizProfile = useCallback((profile: UserProfile) => {
+    setBizProfileState(profile);
+    updateUserCache(profile.uid, profile);
+  }, []);
+
   const value: UserProfileContextType = {
     userProfile,
     realProfile,
     hidiProfile,
+    bizProfile,
     activeProfileType,
     hasHidiProfile: !!hidiProfile,
+    hasBizProfile: !!bizProfile,
     loading,
     error,
     updateProfile,
     updateLocalProfile,
     refreshProfile,
     switchIdentity,
+    switchToBiz,
     setHidiProfile,
+    setBizProfile,
   };
 
   return (

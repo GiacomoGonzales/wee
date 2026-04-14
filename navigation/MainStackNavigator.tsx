@@ -18,6 +18,13 @@ import RegisterScreen from '../screens/RegisterScreen';
 import HidiCreationScreen from '../screens/HidiCreationScreen';
 import AiAvatarScreen from '../screens/AiAvatarScreen';
 import ReelsScreen from '../screens/ReelsScreen';
+import CreditStoreScreen from '../screens/CreditStoreScreen';
+import WalletScreen from '../screens/WalletScreen';
+import WeeBizScreen from '../screens/WeeBizScreen';
+import WeeBizCategoryScreen from '../screens/WeeBizCategoryScreen';
+import WeeBizProfileScreen from '../screens/WeeBizProfileScreen';
+import WeeBizRegisterScreen from '../screens/WeeBizRegisterScreen';
+import WeeBizProductsScreen from '../screens/WeeBizProductsScreen';
 import AuthStackNavigator from './AuthStackNavigator';
 import Sidebar from '../components/Sidebar';
 import RightSidebar from '../components/RightSidebar';
@@ -28,7 +35,7 @@ export type MainStackParamList = {
   Main: undefined;
   Settings: undefined;
   Search: undefined;
-  Create: undefined;
+  Create: { communitySlug?: string } | undefined;
   PostDetail: {
     post: Post;
   };
@@ -40,6 +47,13 @@ export type MainStackParamList = {
   };
   HidiCreation: undefined;
   AiAvatar: undefined;
+  CreditStore: undefined;
+  Wallet: undefined;
+  WeeBiz: undefined;
+  WeeBizCategory: { categoryId: string; categoryLabel: string };
+  WeeBizProfile: { businessId: string };
+  WeeBizRegister: { business?: any } | undefined;
+  WeeBizProducts: { businessId: string; isOwner: boolean };
   Reels: {
     initialPost: Post;
     initialVideoPosts: Post[];
@@ -55,232 +69,152 @@ export type MainStackParamList = {
 
 const Stack = createStackNavigator<MainStackParamList>();
 
+// Wrapper components para desktop layout
+const DesktopLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { theme } = useTheme();
+  return (
+    <View style={[styles.desktopContainer, { backgroundColor: theme.colors.background }]}>
+      <View style={styles.leftSidebar}>
+        <Sidebar />
+      </View>
+      <View style={[styles.mainContent, {
+        borderLeftColor: theme.colors.border,
+        borderRightColor: theme.colors.border,
+      }]}>
+        {children}
+      </View>
+      <View style={styles.rightSidebar}>
+        <RightSidebar />
+      </View>
+    </View>
+  );
+};
+
+const MainScreen = () => {
+  const { isDesktop } = useResponsive();
+  return isDesktop ? (
+    <DesktopLayout><MainTabsScreen /></DesktopLayout>
+  ) : (
+    <MainTabsScreen />
+  );
+};
+
+const SettingsWrapper = () => {
+  const { isDesktop } = useResponsive();
+  return isDesktop ? (
+    <DesktopLayout><SettingsScreen /></DesktopLayout>
+  ) : (
+    <SettingsScreen />
+  );
+};
+
+const SearchWrapper = () => {
+  const { isDesktop } = useResponsive();
+  return isDesktop ? (
+    <DesktopLayout><SearchScreen /></DesktopLayout>
+  ) : (
+    <SearchScreen />
+  );
+};
+
+const CreateWrapper = () => {
+  const { isDesktop } = useResponsive();
+  return isDesktop ? (
+    <DesktopLayout><CreateScreen /></DesktopLayout>
+  ) : (
+    <CreateScreen />
+  );
+};
+
 const MainStackNavigator: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
   const { userProfile, loading: profileLoading } = useUserProfile();
-  const { theme } = useTheme();
-  const { isDesktop } = useResponsive();
   const [isInitialLoad, setIsInitialLoad] = React.useState(true);
 
   React.useEffect(() => {
-    // Después de que authLoading sea false por primera vez, marcar que ya no es carga inicial
     if (!authLoading && isInitialLoad) {
       setIsInitialLoad(false);
     }
   }, [authLoading, isInitialLoad]);
 
-  // Mostrar loading mientras se verifica la autenticación
-  // O durante la carga inicial para evitar flash
   if (authLoading || isInitialLoad) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: '#0A0A0A' }]}>
-        <ActivityIndicator size="large" color="#8B5CF6" />
+        <ActivityIndicator size="large" color="#F5B731" />
       </View>
     );
   }
 
-  // Si el usuario está autenticado pero necesita completar el onboarding
-  // (perfil sin displayName configurado, creado recientemente, o sin comunidades seleccionadas)
-  const needsOnboarding = user && userProfile && (
-    !userProfile?.displayName ||
-    userProfile.displayName === user.email?.split('@')[0] ||
-    userProfile.displayName === 'Usuario Anónimo' ||
-    !userProfile.hasCompletedCommunityOnboarding
-  );
+  const hasValidDisplayName = userProfile?.displayName &&
+    userProfile.displayName !== user?.email?.split('@')[0] &&
+    userProfile.displayName !== 'Usuario Anónimo';
 
-  console.log('🧭 Navigation check:', {
-    user: user ? 'exists' : 'null',
-    displayName: userProfile?.displayName,
-    email: user?.email,
-    hasCompletedCommunityOnboarding: userProfile?.hasCompletedCommunityOnboarding,
-    joinedCommunities: userProfile?.joinedCommunities?.length,
-    needsOnboarding,
-  });
+  const needsOnboarding = user && userProfile && !hasValidDisplayName;
 
   if (needsOnboarding) {
     return <OnboardingScreen />;
   }
 
-  // Mostrar la app principal - tanto para usuarios autenticados como no autenticados
-  // La landing page se mostrará y los botones de login/register estarán disponibles
   return (
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
         cardStyle: { flex: 1 },
+        cardStyleInterpolator: ({ current }) => ({
+          cardStyle: { opacity: current.progress },
+        }),
+        transitionSpec: {
+          open: { animation: 'timing', config: { duration: 350, useNativeDriver: true } },
+          close: { animation: 'timing', config: { duration: 250, useNativeDriver: true } },
+        },
+        detachPreviousScreen: false,
       }}
     >
-      <Stack.Screen name="Main" options={{ cardStyle: { flex: 1 } }}>
-        {(props) => (
-          isDesktop ? (
-            <View style={[styles.desktopContainer, { backgroundColor: theme.colors.background }]}>
-              <View style={styles.leftSidebar}>
-                <Sidebar />
-              </View>
-              <View style={[styles.mainContent, {
-                borderLeftColor: theme.colors.border,
-                borderRightColor: theme.colors.border,
-              }]}>
-                <MainTabsScreen {...props} />
-              </View>
-              <View style={styles.rightSidebar}>
-                <RightSidebar />
-              </View>
-            </View>
-          ) : (
-            <MainTabsScreen {...props} />
-          )
-        )}
-      </Stack.Screen>
+      <Stack.Screen name="Main" component={MainScreen} />
       <Stack.Screen
         name="Settings"
-        options={{
-          presentation: 'modal',
-        }}
-      >
-        {(props) => (
-          isDesktop ? (
-            <View style={[styles.desktopContainer, { backgroundColor: theme.colors.background }]}>
-              <View style={styles.leftSidebar}>
-                <Sidebar />
-              </View>
-              <View style={[styles.mainContent, {
-                borderLeftColor: theme.colors.border,
-                borderRightColor: theme.colors.border,
-              }]}>
-                <SettingsScreen {...props} />
-              </View>
-              <View style={styles.rightSidebar}>
-                <RightSidebar />
-              </View>
-            </View>
-          ) : (
-            <SettingsScreen {...props} />
-          )
-        )}
-      </Stack.Screen>
+        component={SettingsWrapper}
+        options={{ presentation: 'modal' }}
+      />
       <Stack.Screen
         name="Search"
-        options={{
-          presentation: 'card',
-          headerShown: false,
-          gestureEnabled: true,
-        }}
-      >
-        {(props) => (
-          isDesktop ? (
-            <View style={[styles.desktopContainer, { backgroundColor: theme.colors.background }]}>
-              <View style={styles.leftSidebar}>
-                <Sidebar />
-              </View>
-              <View style={[styles.mainContent, {
-                borderLeftColor: theme.colors.border,
-                borderRightColor: theme.colors.border,
-              }]}>
-                <SearchScreen {...props} />
-              </View>
-              <View style={styles.rightSidebar}>
-                <RightSidebar />
-              </View>
-            </View>
-          ) : (
-            <SearchScreen {...props} />
-          )
-        )}
-      </Stack.Screen>
+        component={SearchWrapper}
+        options={{ gestureEnabled: true }}
+      />
       <Stack.Screen
         name="Create"
-        options={{
-          presentation: 'card',
-          headerShown: false,
-          gestureEnabled: false,
-        }}
-      >
-        {(props) => (
-          isDesktop ? (
-            <View style={[styles.desktopContainer, { backgroundColor: theme.colors.background }]}>
-              <View style={styles.leftSidebar}>
-                <Sidebar />
-              </View>
-              <View style={[styles.mainContent, {
-                borderLeftColor: theme.colors.border,
-                borderRightColor: theme.colors.border,
-              }]}>
-                <CreateScreen {...props} />
-              </View>
-              <View style={styles.rightSidebar}>
-                <RightSidebar />
-              </View>
-            </View>
-          ) : (
-            <CreateScreen {...props} />
-          )
-        )}
-      </Stack.Screen>
-      <Stack.Screen
-        name="PostDetail"
-        component={PostDetailScreen}
-        options={{
-          presentation: 'card',
-          headerShown: false,
-        }}
+        component={CreateWrapper}
+        options={{ gestureEnabled: false }}
       />
-      <Stack.Screen
-        name="UserProfile"
-        component={UserProfileScreen}
-        options={{
-          presentation: 'card',
-          headerShown: false,
-        }}
-      />
-      <Stack.Screen
-        name="Community"
-        component={CommunityScreen}
-        options={{
-          presentation: 'card',
-          headerShown: false,
-        }}
-      />
-      <Stack.Screen
-        name="HidiCreation"
-        component={HidiCreationScreen}
-        options={{
-          presentation: 'card',
-          headerShown: false,
-        }}
-      />
-      <Stack.Screen
-        name="AiAvatar"
-        component={AiAvatarScreen}
-        options={{
-          presentation: 'card',
-          headerShown: false,
-        }}
-      />
+      <Stack.Screen name="PostDetail" component={PostDetailScreen} />
+      <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+      <Stack.Screen name="Community" component={CommunityScreen} />
+      <Stack.Screen name="HidiCreation" component={HidiCreationScreen} />
+      <Stack.Screen name="AiAvatar" component={AiAvatarScreen} />
+      <Stack.Screen name="CreditStore" component={CreditStoreScreen} />
+      <Stack.Screen name="Wallet" component={WalletScreen} />
+      <Stack.Screen name="WeeBiz" component={WeeBizScreen} />
+      <Stack.Screen name="WeeBizCategory" component={WeeBizCategoryScreen} />
+      <Stack.Screen name="WeeBizProfile" component={WeeBizProfileScreen} />
+      <Stack.Screen name="WeeBizRegister" component={WeeBizRegisterScreen} />
+      <Stack.Screen name="WeeBizProducts" component={WeeBizProductsScreen} />
       <Stack.Screen
         name="Reels"
         component={ReelsScreen}
         options={{
-          presentation: 'fullScreenModal',
-          headerShown: false,
+          presentation: 'modal',
           cardStyle: { backgroundColor: '#000' },
         }}
       />
       <Stack.Screen
         name="Login"
         component={LoginScreen}
-        options={{
-          presentation: 'modal',
-          headerShown: false,
-        }}
+        options={{ presentation: 'modal' }}
       />
       <Stack.Screen
         name="Register"
         component={RegisterScreen}
-        options={{
-          presentation: 'modal',
-          headerShown: false,
-        }}
+        options={{ presentation: 'modal' }}
       />
     </Stack.Navigator>
   );

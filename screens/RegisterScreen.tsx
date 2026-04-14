@@ -28,7 +28,7 @@ const RegisterScreen: React.FC = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const { signUp, signInWithGoogle, signInAnonymously } = useAuth();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
 
   const updateFormData = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -133,7 +133,7 @@ const RegisterScreen: React.FC = () => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#8B5CF6" />
+        <ActivityIndicator size="large" color="#F5B731" />
         <Text style={styles.loadingText}>Creando cuenta...</Text>
       </View>
     );
@@ -141,6 +141,20 @@ const RegisterScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Handle bar para cerrar el modal */}
+      <TouchableOpacity
+        style={styles.handleBar}
+        onPress={() => {
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.getParent()?.goBack();
+          }
+        }}
+        activeOpacity={0.7}
+      >
+        <View style={styles.handle} />
+      </TouchableOpacity>
       <KeyboardAvoidingView
         style={styles.content}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -153,12 +167,12 @@ const RegisterScreen: React.FC = () => {
           {/* Logo y título */}
           <View style={styles.header}>
             <Image
-              source={require('../assets/logo.png')}
+              source={require('../assets/images/weelogo-vertical.png')}
               style={styles.logo}
               resizeMode="contain"
             />
             <Text style={styles.title}>Crea tu cuenta</Text>
-            <Text style={styles.subtitle}>Únete a la comunidad HideTok</Text>
+            <Text style={styles.subtitle}>Únete a la comunidad Weë</Text>
           </View>
 
           {/* Formulario */}
@@ -287,6 +301,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0A0A0A',
   },
+  handleBar: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
   content: {
     flex: 1,
   },
@@ -315,8 +339,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   logo: {
-    width: 70,
-    height: 70,
+    width: 120,
+    height: 120,
     marginBottom: 8,
   },
   title: {
@@ -372,13 +396,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryButton: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: '#F5B731',
     borderRadius: 10,
     padding: 10,
     alignItems: 'center',
     marginTop: 4,
     marginBottom: 10,
-    shadowColor: '#8B5CF6',
+    shadowColor: '#F5B731',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -454,7 +478,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   loginLink: {
-    color: '#8B5CF6',
+    color: '#F5B731',
     fontSize: 11,
     fontWeight: '600',
   },
@@ -465,7 +489,7 @@ const styles = StyleSheet.create({
     lineHeight: 14,
   },
   termsLink: {
-    color: '#8B5CF6',
+    color: '#F5B731',
     fontWeight: '500',
   },
 });

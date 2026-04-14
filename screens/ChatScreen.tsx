@@ -233,7 +233,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
       <View style={[styles.inputContainer, { 
         backgroundColor: theme.colors.background,
         borderTopColor: theme.colors.border,
-        paddingBottom: Math.max(insets.bottom, 16) + (keyboardHeight > 0 ? 16 : 0),
+        paddingBottom: Math.max(insets.bottom, 16) + (keyboardHeight > 0 ? 16 : 80),
         transform: [{ translateY: keyboardHeight > 0 ? -keyboardHeight + insets.bottom + 16 : 0 }],
       }]}>
         <View style={[styles.inputWrapper, { 

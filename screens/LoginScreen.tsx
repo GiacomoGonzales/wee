@@ -24,7 +24,7 @@ const LoginScreen: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
 
   const { signIn, signInWithGoogle, signInAnonymously, resetPassword } = useAuth();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
 
   const handleEmailLogin = async () => {
     if (!email || !password) {
@@ -39,7 +39,10 @@ const LoginScreen: React.FC = () => {
     setLoading(true);
     try {
       await signIn(email, password);
-      // NO poner loading = false aquí, mantener el spinner hasta que la redirección ocurra
+      // Login exitoso - cerrar el modal de login
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      }
     } catch (error: any) {
       // Solo en caso de error, volver a mostrar el formulario
       setLoading(false);
@@ -75,7 +78,9 @@ const LoginScreen: React.FC = () => {
     setLoading(true);
     try {
       await signInWithGoogle();
-      // NO poner loading = false aquí, mantener el spinner hasta que la redirección ocurra
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      }
     } catch (error: any) {
       // Solo en caso de error, volver a mostrar el formulario
       setLoading(false);
@@ -93,7 +98,9 @@ const LoginScreen: React.FC = () => {
     setLoading(true);
     try {
       await signInAnonymously();
-      // NO poner loading = false aquí, mantener el spinner hasta que la redirección ocurra
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      }
     } catch (error: any) {
       // Solo en caso de error, volver a mostrar el formulario
       setLoading(false);
@@ -143,7 +150,7 @@ const LoginScreen: React.FC = () => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#8B5CF6" />
+        <ActivityIndicator size="large" color="#F5B731" />
         <Text style={styles.loadingText}>Iniciando sesión...</Text>
       </View>
     );
@@ -151,6 +158,20 @@ const LoginScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Handle bar para cerrar el modal */}
+      <TouchableOpacity
+        style={styles.handleBar}
+        onPress={() => {
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.getParent()?.goBack();
+          }
+        }}
+        activeOpacity={0.7}
+      >
+        <View style={styles.handle} />
+      </TouchableOpacity>
       <KeyboardAvoidingView
         style={styles.content}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -163,11 +184,11 @@ const LoginScreen: React.FC = () => {
             {/* Logo y título */}
             <View style={styles.header}>
               <Image
-                source={require('../assets/logo.png')}
+                source={require('../assets/images/weelogo-vertical.png')}
                 style={styles.logo}
                 resizeMode="contain"
               />
-              <Text style={styles.title}>Bienvenido a HideTok</Text>
+              <Text style={styles.title}>Bienvenido a Weë</Text>
               <Text style={styles.subtitle}>Inicia sesión para continuar</Text>
             </View>
 
@@ -267,6 +288,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0A0A0A',
   },
+  handleBar: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
   content: {
     flex: 1,
   },
@@ -295,8 +326,8 @@ const styles = StyleSheet.create({
     marginBottom: 28,
   },
   logo: {
-    width: 80,
-    height: 80,
+    width: 120,
+    height: 120,
     marginBottom: 16,
   },
   title: {
@@ -356,17 +387,17 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   forgotPasswordText: {
-    color: '#8B5CF6',
+    color: '#F5B731',
     fontSize: 12,
     fontWeight: '500',
   },
   primaryButton: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: '#F5B731',
     borderRadius: 10,
     padding: 12,
     alignItems: 'center',
     marginBottom: 14,
-    shadowColor: '#8B5CF6',
+    shadowColor: '#F5B731',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
     shadowRadius: 6,
@@ -441,7 +472,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   registerLink: {
-    color: '#8B5CF6',
+    color: '#F5B731',
     fontSize: 12,
     fontWeight: '600',
   },

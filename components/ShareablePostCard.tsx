@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Post } from '../services/firestoreService';
+import { cloudinaryVideoThumb } from '../services/cloudinaryService';
 import { formatNumber } from '../data/mockData';
 import AvatarDisplay from './avatars/AvatarDisplay';
 import { Timestamp } from 'firebase/firestore';
@@ -81,7 +82,7 @@ const ShareablePostCard: React.FC<ShareablePostCardProps> = ({
                 style={styles.logo}
                 contentFit="contain"
               />
-              <Text style={styles.brandName}>HideTok</Text>
+              <Text style={styles.brandName}>Weë</Text>
             </View>
             {communityName && (
               <View style={styles.communityBadge}>
@@ -97,7 +98,7 @@ const ShareablePostCard: React.FC<ShareablePostCardProps> = ({
               avatarType={authorAvatarType || 'predefined'}
               avatarId={authorAvatarId || 'male'}
               photoURL={authorPhotoURL}
-              backgroundColor="#8B5CF6"
+              backgroundColor="#F5B731"
               showBorder={false}
             />
             <View style={styles.authorInfo}>
@@ -118,6 +119,22 @@ const ShareablePostCard: React.FC<ShareablePostCardProps> = ({
               style={styles.postImage}
               contentFit="cover"
             />
+          )}
+
+          {/* Video thumbnail */}
+          {!post.imageUrls?.length && post.videoUrl && (
+            <View style={styles.videoThumbWrap}>
+              <Image
+                source={{ uri: cloudinaryVideoThumb(post.videoUrl) }}
+                style={styles.postImage}
+                contentFit="cover"
+              />
+              <View style={styles.videoPlayOverlay}>
+                <View style={styles.videoPlayCircle}>
+                  <Ionicons name="play" size={24} color="white" style={{ marginLeft: 2 }} />
+                </View>
+              </View>
+            </View>
           )}
 
           {/* Tags */}
@@ -149,7 +166,7 @@ const ShareablePostCard: React.FC<ShareablePostCardProps> = ({
 
           {/* Footer */}
           <View style={styles.footer}>
-            <Text style={styles.footerCta}>Opina de forma anónima en HideTok</Text>
+            <Text style={styles.footerCta}>Opina de forma anónima en Weë</Text>
           </View>
         </View>
       </View>
@@ -167,7 +184,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 16,
     // Simulated gradient with overlay
-    shadowColor: '#8B5CF6',
+    shadowColor: '#F5B731',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.3,
     shadowRadius: 20,
@@ -203,12 +220,12 @@ const styles = StyleSheet.create({
   brandName: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#8B5CF6',
+    color: '#F5B731',
     marginLeft: 8,
     letterSpacing: -0.3,
   },
   communityBadge: {
-    backgroundColor: '#8B5CF6' + '15',
+    backgroundColor: '#F5B731' + '15',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -216,7 +233,7 @@ const styles = StyleSheet.create({
   communityText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#8B5CF6',
+    color: '#F5B731',
   },
   authorSection: {
     flexDirection: 'row',
@@ -249,6 +266,23 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     backgroundColor: '#F3F4F6',
   },
+  videoThumbWrap: {
+    position: 'relative',
+    marginBottom: 12,
+  },
+  videoPlayOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  videoPlayCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   tagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -256,7 +290,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   tagChip: {
-    backgroundColor: '#8B5CF6' + '15',
+    backgroundColor: '#F5B731' + '15',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -264,7 +298,7 @@ const styles = StyleSheet.create({
   tagText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#8B5CF6',
+    color: '#F5B731',
   },
   statsContainer: {
     flexDirection: 'row',
@@ -292,7 +326,7 @@ const styles = StyleSheet.create({
   },
   footerCta: {
     fontSize: 13,
-    color: '#8B5CF6',
+    color: '#F5B731',
     fontWeight: '600',
   },
 });

@@ -635,7 +635,7 @@ const ProfileScreen: React.FC = () => {
               <Text style={[styles.profileTypeBadgeText, {
                 color: activeProfileType === 'hidi' ? theme.colors.accent : theme.colors.textSecondary,
               }]}>
-                Perfil {activeProfileType === 'hidi' ? 'HIDI' : 'Real'}
+                Perfil {activeProfileType === 'hidi' ? 'Weë' : 'Real'}
               </Text>
               <Ionicons
                 name="swap-horizontal"
@@ -738,7 +738,7 @@ const ProfileScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          {/* Botón Crear perfil HIDI - solo si no existe */}
+          {/* Botón Crear perfil Weë - solo si no existe */}
           {!hasHidiProfile && activeProfileType === 'real' && (
             <View style={styles.hidiButtonContainer}>
               <TouchableOpacity
@@ -748,7 +748,7 @@ const ProfileScreen: React.FC = () => {
               >
                 <Ionicons name="eye-off-outline" size={18} color={theme.colors.accent} />
                 <Text style={[styles.hidiButtonText, { color: theme.colors.accent }]}>
-                  Crear perfil HIDI
+                  Crear perfil Weë
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1063,7 +1063,7 @@ const styles = StyleSheet.create({
   },
   postsContainer: {
     paddingTop: 12,
-    paddingBottom: 16,
+    paddingBottom: 85,
   },
   postContainer: {
     paddingHorizontal: 16,

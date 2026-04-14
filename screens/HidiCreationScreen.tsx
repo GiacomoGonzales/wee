@@ -90,7 +90,7 @@ const HidiCreationScreen: React.FC = () => {
         await usersService.update(hidiDocId, { photoURLThumbnail });
       }
 
-      console.log('✅ Perfil HIDI creado con docId:', hidiDocId);
+      console.log('✅ Perfil Weë creado con docId:', hidiDocId);
 
       // Actualizar perfil real con linkedAccountId
       await usersService.update(realProfile.id, {
@@ -105,13 +105,13 @@ const HidiCreationScreen: React.FC = () => {
       }
 
       Alert.alert(
-        'Perfil HIDI creado',
+        'Perfil Weë creado',
         'Tu identidad anónima está lista. Puedes cambiar entre perfiles desde el header.',
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } catch (error: any) {
       console.error('❌ Error creando perfil HIDI:', error);
-      Alert.alert('Error', error?.message || 'No se pudo crear el perfil HIDI');
+      Alert.alert('Error', error?.message || 'No se pudo crear el perfil Weë');
     } finally {
       setIsCreating(false);
     }
@@ -124,7 +124,7 @@ const HidiCreationScreen: React.FC = () => {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={scale(24)} color={theme.colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Crear Perfil HIDI</Text>
+        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Crear Perfil Weë</Text>
         <View style={{ width: scale(24) }} />
       </View>
 
@@ -144,7 +144,7 @@ const HidiCreationScreen: React.FC = () => {
         <View style={[styles.disclaimer, { backgroundColor: theme.colors.accent + '15' }]}>
           <Ionicons name="shield-checkmark" size={scale(24)} color={theme.colors.accent} />
           <Text style={[styles.disclaimerText, { color: theme.colors.text }]}>
-            Este perfil es independiente de tu identidad real. Las publicaciones y acciones que hagas con HIDI no estarán vinculadas a tu perfil principal.
+            Este perfil es independiente de tu identidad real. Las publicaciones y acciones que hagas con Weë no estarán vinculadas a tu perfil principal.
           </Text>
         </View>
 
@@ -221,7 +221,7 @@ const HidiCreationScreen: React.FC = () => {
           ) : (
             <>
               <Ionicons name="eye-off" size={scale(20)} color="white" />
-              <Text style={styles.createButtonText}>Crear Perfil HIDI</Text>
+              <Text style={styles.createButtonText}>Crear Perfil Weë</Text>
             </>
           )}
         </TouchableOpacity>

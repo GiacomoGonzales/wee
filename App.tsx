@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Alert, Platform, StatusBar } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import * as Linking from 'expo-linking';
 
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -9,9 +9,10 @@ import { AuthProvider } from './contexts/AuthContext';
 import { UserProfileProvider } from './contexts/UserProfileContext';
 import { ScrollProvider } from './contexts/ScrollContext';
 import { PushNotificationProvider } from './contexts/PushNotificationContext';
+import { TabBarProvider } from './contexts/TabBarContext';
 import MainStackNavigator from './navigation/MainStackNavigator';
 import ErrorBoundary from './components/ErrorBoundary';
-import SplashScreen from './components/SplashScreen';
+// SplashScreen de React removido - el splash nativo de Android es suficiente
 
 // Tema oscuro personalizado para React Navigation
 const CustomDarkTheme = {
@@ -20,22 +21,50 @@ const CustomDarkTheme = {
     ...DarkTheme.colors,
     background: '#0A0A0A',
     card: '#0A0A0A',
-    primary: '#8B5CF6',
+    primary: '#F5B731',
   },
 };
 
 // Prefijo para deep links nativos
 const prefix = Linking.createURL('/');
 
+// Filtrar URLs del dev client para que no interfieran con la navegación
+const shouldHandleUrl = (url: string) => {
+  if (url.includes('expo-development-client')) return false;
+  return true;
+};
+
 // Configuración de linking para deep links y universal links
 const linking: any = {
   prefixes: [
     prefix,
     'hidetok://',
-    'https://hidetok.com',
-    'https://www.hidetok.com',
+    'https://wee.zone',
+    'https://www.wee.zone',
     'http://localhost:8082',
   ],
+  // Interceptar la URL inicial para filtrar URLs del dev client
+  async getInitialURL() {
+    const url = await Linking.getInitialURL();
+    console.log('🔗 getInitialURL:', url);
+    if (url && !shouldHandleUrl(url)) {
+      console.log('🔗 URL filtrada (dev client), retornando null');
+      return null;
+    }
+    return url;
+  },
+  // Interceptar URLs entrantes para filtrar URLs del dev client
+  subscribe(listener: (url: string) => void) {
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      console.log('🔗 URL entrante:', url);
+      if (shouldHandleUrl(url)) {
+        listener(url);
+      } else {
+        console.log('🔗 URL filtrada (dev client)');
+      }
+    });
+    return () => subscription.remove();
+  },
   config: {
     screens: {
       Main: {
@@ -53,13 +82,13 @@ const linking: any = {
           Inbox: {
             path: 'inbox',
             screens: {
-              InboxMain: '',
+              InboxMain: 'messages',
             },
           },
           Profile: {
             path: 'profile',
             screens: {
-              ProfileMain: '',
+              ProfileMain: 'me',
             },
           },
         },
@@ -111,30 +140,21 @@ if (typeof window !== 'undefined') {
 }
 
 export default function App() {
-  const [showSplash, setShowSplash] = useState(true);
-
-  useEffect(() => {
-    console.log('🚀 App component mounted');
-    console.log('📱 Platform:', Platform.OS);
-  }, []);
-
-  if (showSplash) {
-    return <SplashScreen onFinish={() => setShowSplash(false)} />;
-  }
-
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-        <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" />
+        {/* StatusBar se controla dinámicamente desde ThemeContext */}
         <ThemeProvider>
           <AuthProvider>
             <UserProfileProvider>
               <ScrollProvider>
-                <NavigationContainer linking={linking} theme={CustomDarkTheme}>
-                  <PushNotificationProvider>
-                    <MainStackNavigator />
-                  </PushNotificationProvider>
-                </NavigationContainer>
+                <TabBarProvider>
+                  <NavigationContainer linking={linking} theme={CustomDarkTheme}>
+                    <PushNotificationProvider>
+                      <MainStackNavigator />
+                    </PushNotificationProvider>
+                  </NavigationContainer>
+                </TabBarProvider>
               </ScrollProvider>
             </UserProfileProvider>
           </AuthProvider>

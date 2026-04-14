@@ -13,10 +13,17 @@ import {
   ViewToken,
   Animated,
   Platform,
+  StatusBar,
+  LayoutAnimation,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Video, ResizeMode, AVPlaybackStatus, Audio } from 'expo-av';
-import { useNavigation, useIsFocused } from '@react-navigation/native';
+import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
+import { Share } from 'react-native';
+import ViewShot from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
+import ShareablePostCard from '../components/ShareablePostCard';
+import { useReposts } from '../hooks/useReposts';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -25,6 +32,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useUserProfile } from '../contexts/UserProfileContext';
 import { useScroll } from '../contexts/ScrollContext';
+import { useTabBar } from '../contexts/TabBarContext';
 import { communityService, Community } from '../services/communityService';
 import { useCommunities } from '../hooks/useCommunities';
 import { postsService, Post } from '../services/firestoreService';
@@ -104,7 +112,7 @@ const LANDING_CATEGORIES = [
     name: 'Gaming & Tech',
     icon: 'game-controller-outline',
     customIcon: require('../assets/icons/category-gaming.png'),
-    color: '#8B5CF6',
+    color: '#F5B731',
     communitySlug: 'gaming-tech',
   },
   {
@@ -200,7 +208,7 @@ const LANDING_CATEGORIES = [
     name: 'Esoterico',
     icon: 'moon-outline',
     customIcon: require('../assets/icons/category-esoterico.png'),
-    color: '#7C3AED',
+    color: '#E5A020',
     communitySlug: 'esoterico',
   },
   {
@@ -254,17 +262,49 @@ interface HidReelItemProps {
   isActive: boolean;
   height: number;
   onComment: (postId: string) => void;
+  onScrubbing?: (scrubbing: boolean) => void;
 }
 
-const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, height, onComment }) => {
+const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, height, onComment, onScrubbing }) => {
   const { user } = useAuth();
   const { userProfile: activeProfile } = useUserProfile();
   const { userProfile: postAuthor } = useUserById(post.userId);
+  const navigation = useNavigation();
   const isFocused = useIsFocused();
+  const { hasReposted, repostsCount, toggleRepost } = useReposts(post.id!, post.reposts || 0);
+  const shareCardRef = useRef<ViewShot>(null);
+  const [showShareCard, setShowShareCard] = useState(false);
+
+  const handleShare = async () => {
+    if (Platform.OS === 'web') {
+      await Share.share({ message: `${post.content}\n\n- Publicado en Weë` });
+      return;
+    }
+    setShowShareCard(true);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    try {
+      if (shareCardRef.current?.capture) {
+        const uri = await shareCardRef.current.capture();
+        const isAvailable = await Sharing.isAvailableAsync();
+        if (isAvailable) {
+          await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Compartir post' });
+        }
+      }
+    } catch (e) {
+      await Share.share({ message: `${post.content}\n\n- Publicado en Weë` });
+    }
+    setShowShareCard(false);
+  };
   const videoRef = useRef<Video>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
+  const [textExpanded, setTextExpanded] = useState(false);
   const [hasStartedPlaying, setHasStartedPlaying] = useState(false);
+  const [showTapIcon, setShowTapIcon] = useState(false);
+  const tapIconTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isScrubbing, setIsScrubbing] = useState(false);
 
   const { stats: voteStats, voteAgree, voteDisagree } = useVote({
     postId: post.id!,
@@ -290,9 +330,12 @@ const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, he
 
   const handleTapVideo = useCallback(() => {
     if (!videoRef.current) return;
+    if (tapIconTimer.current) clearTimeout(tapIconTimer.current);
+    setShowTapIcon(true);
     if (isPaused) {
       videoRef.current.playAsync();
       setIsPaused(false);
+      tapIconTimer.current = setTimeout(() => setShowTapIcon(false), 600);
     } else {
       videoRef.current.pauseAsync();
       setIsPaused(true);
@@ -305,8 +348,12 @@ const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, he
       if (status.isPlaying && !hasStartedPlaying) {
         setHasStartedPlaying(true);
       }
+      if (status.durationMillis && !isScrubbing) {
+        setDuration(status.durationMillis);
+        setProgress(status.positionMillis / status.durationMillis);
+      }
     }
-  }, [hasStartedPlaying]);
+  }, [hasStartedPlaying, isScrubbing]);
 
   return (
     <View style={{ width: SCREEN_WIDTH, height, backgroundColor: '#000' }}>
@@ -328,20 +375,81 @@ const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, he
         <Video
           ref={videoRef}
           source={{ uri: post.videoUrl! }}
-          style={StyleSheet.absoluteFill}
+          style={{ width: '100%', height: '100%' }}
           resizeMode={ResizeMode.COVER}
           shouldPlay={isActive}
           isMuted={false}
           isLooping
-          progressUpdateIntervalMillis={500}
+          progressUpdateIntervalMillis={100}
           onPlaybackStatusUpdate={handlePlaybackStatus}
         />
+        {/* Play/Pause icon overlay */}
+        {showTapIcon && (
+          <View style={hidReelStyles.tapIconOverlay}>
+            <View style={hidReelStyles.tapIconCircle}>
+              <Ionicons name={isPaused ? 'pause' : 'play'} size={scale(40)} color="white" />
+            </View>
+          </View>
+        )}
       </TouchableOpacity>
 
       {/* Buffering spinner */}
       {isBuffering && isActive && hasStartedPlaying && (
         <View style={hidReelStyles.overlay} pointerEvents="none">
           <ActivityIndicator size="large" color="white" />
+        </View>
+      )}
+
+      {/* Progress bar — tap/drag to scrub */}
+      {hasStartedPlaying && duration > 0 && (
+        <View
+          style={hidReelStyles.progressBar}
+          onStartShouldSetResponderCapture={() => {
+            if (duration > 500) {
+              onScrubbing?.(true);
+              return true;
+            }
+            return false;
+          }}
+          onStartShouldSetResponder={() => duration > 500}
+          onMoveShouldSetResponder={() => true}
+          onResponderTerminationRequest={() => false}
+          onResponderGrant={(e) => {
+            if (duration < 500) return;
+            setIsScrubbing(true);
+            onScrubbing?.(true);
+            videoRef.current?.pauseAsync();
+            // Extra snap-back after a frame to catch any residual scroll
+            requestAnimationFrame(() => onScrubbing?.(true));
+            const barWidth = SCREEN_WIDTH - scale(32);
+            const x = e.nativeEvent.locationX;
+            setProgress(Math.max(0, Math.min(1, x / barWidth)));
+          }}
+          onResponderMove={(e) => {
+            const barWidth = SCREEN_WIDTH - scale(32);
+            const x = e.nativeEvent.locationX;
+            setProgress(Math.max(0, Math.min(1, x / barWidth)));
+          }}
+          onResponderRelease={() => {
+            if (isScrubbing && duration > 0) {
+              videoRef.current?.setPositionAsync(Math.floor(progress * duration));
+              videoRef.current?.playAsync();
+            }
+            setIsScrubbing(false);
+            onScrubbing?.(false);
+          }}
+          onResponderTerminate={() => {
+            if (isScrubbing) {
+              videoRef.current?.playAsync();
+            }
+            setIsScrubbing(false);
+            onScrubbing?.(false);
+          }}
+        >
+          <View style={[hidReelStyles.progressTrack, isScrubbing && { height: 4, overflow: 'visible' }]}>
+            <View style={[hidReelStyles.progressFill, { width: `${progress * 100}%` }]} />
+            {isScrubbing && <View style={[hidReelStyles.progressThumb, { left: `${progress * 100}%` }]} pointerEvents="none" />}
+          </View>
         </View>
       )}
 
@@ -369,7 +477,7 @@ const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, he
                   avatarId={postAuthor.avatarId || 'male'}
                   photoURL={typeof postAuthor.photoURL === 'string' ? postAuthor.photoURL : undefined}
                   photoURLThumbnail={typeof postAuthor.photoURLThumbnail === 'string' ? postAuthor.photoURLThumbnail : undefined}
-                  backgroundColor="#8B5CF6"
+                  backgroundColor="#F5B731"
                   showBorder={false}
                 />
               )}
@@ -381,9 +489,14 @@ const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, he
               </Text>
             </View>
             {post.content ? (
-              <Text style={hidReelStyles.description} numberOfLines={2}>
-                {post.content}
-              </Text>
+              <TouchableOpacity activeOpacity={0.8} onPress={() => setTextExpanded(prev => !prev)}>
+                <Text style={hidReelStyles.description} numberOfLines={textExpanded ? undefined : 2}>
+                  {post.content}
+                </Text>
+                {!textExpanded && post.content.length > 80 && (
+                  <Text style={hidReelStyles.moreText}>más</Text>
+                )}
+              </TouchableOpacity>
             ) : null}
           </View>
 
@@ -392,7 +505,7 @@ const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, he
             <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={voteAgree}>
               <Ionicons
                 name={voteStats.userVote === 'agree' ? 'thumbs-up' : 'thumbs-up-outline'}
-                size={scale(26)}
+                size={scale(24)}
                 color={voteStats.userVote === 'agree' ? '#22C55E' : 'white'}
               />
               <Text style={hidReelStyles.sidebarCount}>
@@ -402,7 +515,7 @@ const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, he
             <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={voteDisagree}>
               <Ionicons
                 name={voteStats.userVote === 'disagree' ? 'thumbs-down' : 'thumbs-down-outline'}
-                size={scale(26)}
+                size={scale(24)}
                 color={voteStats.userVote === 'disagree' ? '#EF4444' : 'white'}
               />
               <Text style={hidReelStyles.sidebarCount}>
@@ -410,24 +523,116 @@ const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, he
               </Text>
             </TouchableOpacity>
             <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={() => onComment(post.id!)}>
-              <Ionicons name="chatbubble-outline" size={scale(26)} color="white" />
+              <Ionicons name="chatbubble-outline" size={scale(24)} color="white" />
               <Text style={hidReelStyles.sidebarCount}>
                 {formatNumber(post.comments)}
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={toggleRepost}>
+              <Ionicons name="repeat" size={scale(24)} color={hasReposted ? '#F5B731' : 'white'} />
+              <Text style={hidReelStyles.sidebarCount}>
+                {formatNumber(repostsCount)}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={() => {
+              if (!user || !postAuthor) return;
+              const tabNav = navigation.getParent();
+              if (tabNav) {
+                (tabNav as any).navigate('Inbox', {
+                  screen: 'Conversation',
+                  params: {
+                    otherUserId: post.userId,
+                    otherUserData: {
+                      displayName: postAuthor.displayName || 'Usuario',
+                      avatarType: postAuthor.avatarType,
+                      avatarId: postAuthor.avatarId,
+                      photoURL: typeof postAuthor.photoURL === 'string' ? postAuthor.photoURL : undefined,
+                    },
+                  },
+                });
+              }
+            }}>
+              <Ionicons name="paper-plane-outline" size={scale(24)} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={handleShare}>
+              <Ionicons name="share-social-outline" size={scale(24)} color="white" />
+            </TouchableOpacity>
           </View>
         </View>
       </LinearGradient>
+
+      {/* Hidden shareable card for screenshot */}
+      {showShareCard && (
+        <View style={{ position: 'absolute', left: -9999 }}>
+          <ViewShot ref={shareCardRef} options={{ format: 'png', quality: 1 }}>
+            <ShareablePostCard
+              post={post}
+              authorName={postAuthor?.displayName || 'Usuario'}
+              authorAvatarType={postAuthor?.avatarType}
+              authorAvatarId={postAuthor?.avatarId}
+              authorPhotoURL={typeof postAuthor?.photoURL === 'string' ? postAuthor.photoURL : undefined}
+            />
+          </ViewShot>
+        </View>
+      )}
     </View>
   );
 });
 
 const hidReelStyles = StyleSheet.create({
+  tapIconOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  tapIconCircle: {
+    width: scale(64),
+    height: scale(64),
+    borderRadius: scale(32),
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingLeft: scale(4),
+  },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 3,
+  },
+  progressBar: {
+    position: 'absolute',
+    bottom: scale(92),
+    left: scale(16),
+    right: scale(16),
+    height: 30,
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  progressTrack: {
+    height: 2,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 1,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    borderRadius: 1,
+  },
+  progressThumb: {
+    position: 'absolute',
+    top: -5,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#fff',
+    marginLeft: -6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
   },
   topGradient: {
     position: 'absolute',
@@ -444,7 +649,7 @@ const hidReelStyles = StyleSheet.create({
     right: 0,
     paddingTop: scale(60),
     paddingHorizontal: scale(16),
-    paddingBottom: scale(16),
+    paddingBottom: scale(115),
     zIndex: 3,
   },
   bottomContent: {
@@ -476,9 +681,15 @@ const hidReelStyles = StyleSheet.create({
     fontSize: scale(14),
     lineHeight: scale(20),
   },
+  moreText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: scale(13),
+    fontWeight: '500',
+    marginTop: scale(2),
+  },
   rightSidebar: {
     alignItems: 'center',
-    gap: scale(20),
+    gap: scale(14),
     paddingBottom: scale(8),
   },
   sidebarBtn: {
@@ -497,9 +708,15 @@ const LandingScreen: React.FC = () => {
   const { user } = useAuth();
   const { userProfile } = useUserProfile();
   const { scrollToTopTrigger } = useScroll();
+  const { setIsTransparent: setTabBarTransparent, scrollProgress: tabBarProgress } = useTabBar();
   const navigation = useNavigation<LandingScreenNavigationProp>();
+  const route = useRoute<any>();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList>(null);
+
+  // Params for opening Weëls filtered by category
+  const openWeelsParam = route.params?.openWeels;
+  const weelsCommunitySlug = route.params?.weelsCommunitySlug;
 
   const { joinCommunity, leaveCommunity, isMember } = useCommunities(userProfile?.uid);
   const [joiningId, setJoiningId] = useState<string | null>(null);
@@ -523,6 +740,86 @@ const LandingScreen: React.FC = () => {
   const [hidsScrollTarget, setHidsScrollTarget] = useState<number | null>(null);
   const [hidsReady, setHidsReady] = useState(true);
   const [drawerVisible, setDrawerVisible] = useState(false);
+  const [categoriesExpanded, setCategoriesExpanded] = useState(true);
+  const [videoScrubbing, setVideoScrubbing] = useState(false);
+  const videoScrubbingRef = useRef(false);
+  const setVideoScrubbingBoth = useCallback((val: boolean) => {
+    videoScrubbingRef.current = val;
+    setVideoScrubbing(val);
+    if (val && tabScrollRef.current) {
+      // Snap back immediately + after next frame + after 50ms
+      tabScrollRef.current.scrollTo({ x: SCREEN_WIDTH, animated: false });
+      requestAnimationFrame(() => {
+        tabScrollRef.current?.scrollTo({ x: SCREEN_WIDTH, animated: false });
+      });
+      setTimeout(() => {
+        tabScrollRef.current?.scrollTo({ x: SCREEN_WIDTH, animated: false });
+      }, 50);
+    }
+  }, []);
+
+  // Horizontal swipe between tabs using native ScrollView
+  const tabScrollRef = useRef<ScrollView>(null);
+  const tabScrollX = useRef(new Animated.Value(0)).current;
+  const [headerHeight, setHeaderHeight] = useState(0);
+
+  // Interpolate colors based on scroll position
+  const containerBg = tabScrollX.interpolate({
+    inputRange: [0, SCREEN_WIDTH],
+    outputRange: [theme.colors.background, '#000000'],
+    extrapolate: 'clamp',
+  });
+
+  const headerBg = tabScrollX.interpolate({
+    inputRange: [0, SCREEN_WIDTH],
+    outputRange: [theme.colors.background, 'transparent'],
+    extrapolate: 'clamp',
+  });
+
+  // Cross-fade between normal and transparent header
+  const headerNormalOpacity = tabScrollX.interpolate({
+    inputRange: [0, SCREEN_WIDTH * 0.5],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+
+  const headerTransparentOpacity = tabScrollX.interpolate({
+    inputRange: [SCREEN_WIDTH * 0.5, SCREEN_WIDTH],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
+  // Track scroll position and sync tab
+  const isTabPressing = useRef(false);
+
+  const handleTabScrollEvent = useCallback((e: any) => {
+    const x = e.nativeEvent.contentOffset.x;
+    tabScrollX.setValue(x);
+    tabBarProgress.setValue(x / SCREEN_WIDTH);
+  }, [tabScrollX, tabBarProgress]);
+
+  const handleTabScrollEnd = useCallback((e: any) => {
+    // Ignore if scroll was triggered by tab button press
+    if (isTabPressing.current) {
+      isTabPressing.current = false;
+      return;
+    }
+    const page = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+    const newTab = page === 0 ? 'flow' : 'hids';
+    if (newTab !== activeTab) {
+      setActiveTab(newTab);
+    }
+  }, [activeTab]);
+
+  // When tab buttons are pressed, scroll to the right page
+  const scrollToTab = useCallback((tab: 'flow' | 'hids') => {
+    isTabPressing.current = true;
+    setActiveTab(tab);
+    tabScrollRef.current?.scrollTo({
+      x: tab === 'hids' ? SCREEN_WIDTH : 0,
+      animated: true,
+    });
+  }, []);
 
   // Sticky tabs tracking with smooth animation
   const tabsOffsetY = useRef(0);
@@ -548,16 +845,18 @@ const LandingScreen: React.FC = () => {
   // Handle tab switches
   useEffect(() => {
     if (activeTab === 'flow') {
-      // FlatList stays mounted so scroll position and sticky state are preserved
+      // Reset sticky immediately (no animation) to avoid flash
       if (!isTabsStickyRef.current) {
+        stickyAnim.setValue(0);
         Animated.timing(stickyAnim, {
           toValue: 0,
-          duration: 200,
+          duration: 0,
           useNativeDriver: true,
         }).start();
       }
     }
     prevTabRef.current = activeTab;
+    setTabBarTransparent(activeTab === 'hids');
   }, [activeTab]);
 
   // Scroll Hids FlatList to target video when opening from Flow
@@ -580,11 +879,17 @@ const LandingScreen: React.FC = () => {
   const [videoLastDoc, setVideoLastDoc] = useState<DocumentSnapshot | null>(null);
   const [videosLoading, setVideosLoading] = useState(false);
 
-  const loadVideoPosts = useCallback(async () => {
+  const [weelsFilter, setWeelsFilter] = useState<string | null>(weelsCommunitySlug || null);
+
+  const loadVideoPosts = useCallback(async (communitySlug?: string | null) => {
     setVideosLoading(true);
     try {
       const result = await postsService.getVideoPostsPaginated(15);
-      setVideoPosts(result.documents);
+      let filtered = result.documents;
+      if (communitySlug) {
+        filtered = filtered.filter(p => p.communitySlug === communitySlug);
+      }
+      setVideoPosts(filtered);
       setVideoLastDoc(result.lastDoc);
     } catch (error) {
       console.error('Error loading video posts:', error);
@@ -594,14 +899,25 @@ const LandingScreen: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    loadVideoPosts();
-  }, []);
+    loadVideoPosts(weelsFilter);
+  }, [weelsFilter]);
+
+  // Auto-switch to Weëls when opened with params
+  useEffect(() => {
+    if (openWeelsParam && weelsCommunitySlug) {
+      setWeelsFilter(weelsCommunitySlug);
+      setActiveTab('hids');
+      tabScrollRef.current?.scrollTo({ x: SCREEN_WIDTH, animated: false });
+      // Clear params to avoid re-triggering
+      navigation.setParams({ openWeels: undefined, weelsCommunitySlug: undefined } as any);
+    }
+  }, [openWeelsParam, weelsCommunitySlug]);
 
   // Hero carousel phrases
   const HERO_PHRASES = useRef([
-    { title: 'Crea tu alter ego digital H.I.D.I', subtitle: 'Hidden Identity Digital Interface' },
-    { title: 'Exprésate libremente', subtitle: 'Opina. Publica. Conecta.' },
-    { title: 'Tu voz importa', subtitle: 'Debate sin filtros. Sé auténtico.' },
+    { title: 'Crea tu alter ego digital Weë', subtitle: 'World Encode Entity' },
+    { title: 'Tu identidad real. Tu identidad Weë.', subtitle: 'Sé tú... o sé tu Weë.' },
+    { title: 'Publica lo que eres...', subtitle: 'sin mostrar quién eres.' },
   ]).current;
 
   const [heroIndex, setHeroIndex] = useState(0);
@@ -647,9 +963,14 @@ const LandingScreen: React.FC = () => {
     loadData();
   }, []);
 
-  // Scroll to top cuando se dispara el trigger
+  // Scroll to top + switch to Wall cuando se dispara el trigger
   useEffect(() => {
     if (scrollToTopTrigger > 0) {
+      // Switch to Wall if on Weëls
+      if (activeTab === 'hids') {
+        setActiveTab('flow');
+        tabScrollRef.current?.scrollTo({ x: 0, animated: true });
+      }
       flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
     }
   }, [scrollToTopTrigger]);
@@ -822,9 +1143,9 @@ const LandingScreen: React.FC = () => {
       setHidsActiveIndex(index);
       setHidsScrollTarget(index);
       setHidsReady(false);
-      setActiveTab('hids');
+      scrollToTab('hids');
     }
-  }, [videoPosts]);
+  }, [videoPosts, scrollToTab]);
 
   const handleComment = (postId: string) => {
     const post = feedPosts.find(p => p.id === postId);
@@ -877,7 +1198,7 @@ const LandingScreen: React.FC = () => {
     return (
       <View style={styles.heroWrapper}>
         <LinearGradient
-          colors={['#4A1A8A', '#6B21A8', '#3B0D7A', '#1E0A4E']}
+          colors={['#E5A020', '#F5B731', '#D4911A', '#C07D0E']}
           style={styles.heroContainer}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -916,7 +1237,7 @@ const LandingScreen: React.FC = () => {
                       <Text style={styles.heroSubtitleFirst}>{phrase.subtitle}</Text>
                     </View>
                     <Image
-                      source={{ uri: 'https://res.cloudinary.com/dnrj1guvs/image/upload/w_300,h_300,c_fit,q_auto,f_png/app-assets/fz5k4rjfyjgy3ryfo8v0.png' }}
+                      source={require('../assets/images/hero-couple.png')}
                       style={styles.heroImage}
                       contentFit="contain"
                       cachePolicy="memory-disk"
@@ -996,26 +1317,43 @@ const LandingScreen: React.FC = () => {
 
   const renderCategories = () => (
     <View style={[styles.categoriesContainer, { backgroundColor: theme.colors.surface }]}>
-      <Text style={[styles.categoriesTitle, { color: theme.colors.text }]}>
-        Explora por categoria
-      </Text>
-      {categoryRows.map((row, rowIndex) => (
-        <ScrollView
-          key={rowIndex}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoriesScrollContent}
-          style={rowIndex > 0 ? styles.categoryRowGap : undefined}
-        >
-          {row.map((cat) => renderCategoryItem(cat))}
-        </ScrollView>
-      ))}
+      <TouchableOpacity
+        style={styles.categoriesHeader}
+        onPress={() => {
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          setCategoriesExpanded(prev => !prev);
+        }}
+        activeOpacity={0.7}
+      >
+        <Text style={[styles.categoriesTitle, { color: theme.colors.text }]}>
+          Explora por categoria
+        </Text>
+        <Ionicons
+          name={categoriesExpanded ? 'chevron-up' : 'chevron-down'}
+          size={scale(20)}
+          color={theme.colors.textSecondary}
+        />
+      </TouchableOpacity>
+      <View style={{ height: categoriesExpanded ? undefined : 0, overflow: 'hidden' }}>
+        {categoryRows.map((row, rowIndex) => (
+          <ScrollView
+            key={rowIndex}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled
+            contentContainerStyle={styles.categoriesScrollContent}
+            style={rowIndex > 0 ? styles.categoryRowGap : undefined}
+          >
+            {row.map((cat) => renderCategoryItem(cat))}
+          </ScrollView>
+        ))}
+      </View>
     </View>
   );
 
   const COMMUNITY_CATEGORIES = [
     { id: 'beatles', name: 'Los Beatles', icon: 'musical-notes-outline', color: '#3B82F6', members: 4820, communitySlug: 'los-beatles' },
-    { id: 'tarot', name: 'Tarot & Lectura', icon: 'moon-outline', color: '#8B5CF6', members: 3150, communitySlug: 'tarot-lectura' },
+    { id: 'tarot', name: 'Tarot & Lectura', icon: 'moon-outline', color: '#F5B731', members: 3150, communitySlug: 'tarot-lectura' },
     { id: 'recetas-abuela', name: 'Recetas de la Abuela', icon: 'cafe-outline', color: '#F59E0B', members: 2670, communitySlug: 'recetas-abuela' },
     { id: 'memes-arg', name: 'Memes Argentinos', icon: 'happy-outline', color: '#F97316', members: 5420, communitySlug: 'memes-argentinos' },
     { id: 'true-crime', name: 'True Crime Latino', icon: 'skull-outline', color: '#EF4444', members: 1980, communitySlug: 'true-crime-latino' },
@@ -1053,11 +1391,12 @@ const LandingScreen: React.FC = () => {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        nestedScrollEnabled
         contentContainerStyle={styles.communityScrollContent}
       >
         {/* Comunidades reales creadas por usuarios */}
         {userCreatedCommunities.map((cat) => {
-          const color = '#8B5CF6';
+          const color = '#F5B731';
           return (
             <TouchableOpacity
               key={cat.id || cat.slug}
@@ -1173,23 +1512,48 @@ const LandingScreen: React.FC = () => {
                 onPress={() => handlePostPress(post)}
                 activeOpacity={0.8}
               >
-                <View style={styles.trendingHeader}>
-                  <Text style={styles.trendingEmoji}>🔥</Text>
-                  <Text style={[styles.trendingLabel, { color: theme.colors.textSecondary }]}>
-                    Tema del dia
-                  </Text>
-                </View>
-                <Text style={[styles.trendingTitle, { color: theme.colors.text }]} numberOfLines={2}>
-                  {post.content}
-                </Text>
-                <View style={styles.trendingStats}>
-                  <Text style={[styles.trendingStatText, { color: theme.colors.textSecondary }]}>
-                    {formatNumber(post.agreementCount + post.disagreementCount)} Respuestas
-                  </Text>
-                  <Text style={[styles.trendingDot, { color: theme.colors.textSecondary }]}>•</Text>
-                  <Text style={[styles.trendingStatText, { color: theme.colors.accent }]}>
-                    Debate intenso
-                  </Text>
+                <View style={styles.trendingBody}>
+                  <View style={styles.trendingLeft}>
+                    <View style={styles.trendingHeader}>
+                      <Text style={styles.trendingEmoji}>🔥</Text>
+                      <Text style={[styles.trendingLabel, { color: theme.colors.textSecondary }]}>
+                        Tema del dia
+                      </Text>
+                    </View>
+                    <Text style={[styles.trendingTitle, { color: theme.colors.text }]} numberOfLines={2}>
+                      {post.content}
+                    </Text>
+                    <View style={styles.trendingStats}>
+                      <Text style={[styles.trendingStatText, { color: theme.colors.textSecondary }]}>
+                        {formatNumber(post.agreementCount + post.disagreementCount)} Respuestas
+                      </Text>
+                      <Text style={[styles.trendingDot, { color: theme.colors.textSecondary }]}>•</Text>
+                      <Text style={[styles.trendingStatText, { color: theme.colors.accent }]}>
+                        Debate intenso
+                      </Text>
+                    </View>
+                  </View>
+                  {(post.imageUrls?.[0] || post.videoUrl) && (
+                    <View style={[styles.cardThumb, { backgroundColor: theme.colors.surface }]}>
+                      {post.videoUrl ? (
+                        <Video
+                          source={{ uri: post.videoUrl }}
+                          style={styles.cardThumbMedia}
+                          resizeMode={ResizeMode.COVER}
+                          shouldPlay
+                          isMuted
+                          isLooping
+                        />
+                      ) : (
+                        <Image
+                          source={{ uri: post.imageUrls![0] }}
+                          style={styles.cardThumbMedia}
+                          contentFit="cover"
+                          cachePolicy="memory-disk"
+                        />
+                      )}
+                    </View>
+                  )}
                 </View>
                 <View style={[styles.trendingProgress, { backgroundColor: theme.colors.border }]}>
                   <View style={[styles.trendingProgressBar, { backgroundColor: theme.colors.accent, width: `${agreePercent}%` }]} />
@@ -1237,23 +1601,48 @@ const LandingScreen: React.FC = () => {
               onPress={() => handlePostPress(post)}
               activeOpacity={0.8}
             >
-              <View style={styles.featuredHeader}>
-                <Text style={styles.featuredEmoji}>⭐</Text>
-                <Text style={[styles.featuredLabel, { color: theme.colors.text }]}>
-                  Opinion destacada
-                </Text>
-              </View>
-              <Text style={[styles.featuredContent, { color: theme.colors.text }]} numberOfLines={3}>
-                {post.content}
-              </Text>
-              <View style={styles.featuredStats}>
-                <Text style={[styles.featuredStatText, { color: theme.colors.textSecondary }]}>
-                  {formatNumber(post.agreementCount)} Likes
-                </Text>
-                <Text style={[styles.featuredDot, { color: theme.colors.textSecondary }]}>•</Text>
-                <Text style={[styles.featuredStatText, { color: theme.colors.textSecondary }]}>
-                  {formatNumber(post.comments)} Comentarios
-                </Text>
+              <View style={styles.trendingBody}>
+                <View style={styles.trendingLeft}>
+                  <View style={styles.featuredHeader}>
+                    <Text style={styles.featuredEmoji}>⭐</Text>
+                    <Text style={[styles.featuredLabel, { color: theme.colors.text }]}>
+                      Opinion destacada
+                    </Text>
+                  </View>
+                  <Text style={[styles.featuredContent, { color: theme.colors.text }]} numberOfLines={3}>
+                    {post.content}
+                  </Text>
+                  <View style={styles.featuredStats}>
+                    <Text style={[styles.featuredStatText, { color: theme.colors.textSecondary }]}>
+                      {formatNumber(post.agreementCount)} Likes
+                    </Text>
+                    <Text style={[styles.featuredDot, { color: theme.colors.textSecondary }]}>•</Text>
+                    <Text style={[styles.featuredStatText, { color: theme.colors.textSecondary }]}>
+                      {formatNumber(post.comments)} Comentarios
+                    </Text>
+                  </View>
+                </View>
+                {(post.imageUrls?.[0] || post.videoUrl) && (
+                  <View style={[styles.cardThumb, { backgroundColor: theme.colors.surface }]}>
+                    {post.videoUrl ? (
+                      <Video
+                        source={{ uri: post.videoUrl }}
+                        style={styles.cardThumbMedia}
+                        resizeMode={ResizeMode.COVER}
+                        shouldPlay
+                        isMuted
+                        isLooping
+                      />
+                    ) : (
+                      <Image
+                        source={{ uri: post.imageUrls![0] }}
+                        style={styles.cardThumbMedia}
+                        contentFit="cover"
+                        cachePolicy="memory-disk"
+                      />
+                    )}
+                  </View>
+                )}
               </View>
             </TouchableOpacity>
           ))}
@@ -1276,53 +1665,57 @@ const LandingScreen: React.FC = () => {
     );
   };
 
-  const renderTabBar = useCallback((transparent = false) => (
-    <View style={[
-      styles.tabBar,
-      {
-        borderBottomColor: transparent ? 'rgba(255,255,255,0.2)' : theme.colors.border,
-        backgroundColor: transparent ? 'transparent' : theme.colors.background,
-      },
-    ]}>
-      <TouchableOpacity
-        style={[
-          styles.tabItem,
-          activeTab === 'flow' && { borderBottomColor: transparent ? 'white' : theme.colors.accent },
-        ]}
-        onPress={() => setActiveTab('flow')}
-        activeOpacity={0.7}
-      >
-        <Text style={[
-          styles.tabItemText,
-          { color: transparent
-            ? (activeTab === 'flow' ? 'white' : 'rgba(255,255,255,0.6)')
-            : (activeTab === 'flow' ? theme.colors.text : theme.colors.textSecondary) },
-          activeTab === 'flow' && styles.tabItemTextActive,
-        ]}>
-          Flow
-        </Text>
-      </TouchableOpacity>
+  const renderTabBar = useCallback((transparent = false) => {
+    // For cross-fade: normal tab bar always highlights "Wall", transparent always highlights "Weëls"
+    const highlightedTab = transparent ? 'hids' : 'flow';
+    return (
+      <View style={[
+        styles.tabBar,
+        {
+          borderBottomColor: transparent ? 'rgba(255,255,255,0.2)' : theme.colors.border,
+          backgroundColor: transparent ? 'transparent' : theme.colors.background,
+        },
+      ]}>
+        <TouchableOpacity
+          style={[
+            styles.tabItem,
+            highlightedTab === 'flow' && { borderBottomColor: transparent ? 'white' : theme.colors.accent },
+          ]}
+          onPress={() => scrollToTab('flow')}
+          activeOpacity={0.7}
+        >
+          <Text style={[
+            styles.tabItemText,
+            { color: transparent
+              ? (highlightedTab === 'flow' ? 'white' : 'rgba(255,255,255,0.6)')
+              : (highlightedTab === 'flow' ? theme.colors.text : theme.colors.textSecondary) },
+            highlightedTab === 'flow' && styles.tabItemTextActive,
+          ]}>
+            Wall
+          </Text>
+        </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[
-          styles.tabItem,
-          activeTab === 'hids' && { borderBottomColor: transparent ? 'white' : theme.colors.accent },
-        ]}
-        onPress={() => setActiveTab('hids')}
-        activeOpacity={0.7}
-      >
-        <Text style={[
-          styles.tabItemText,
-          { color: transparent
-            ? (activeTab === 'hids' ? 'white' : 'rgba(255,255,255,0.6)')
-            : (activeTab === 'hids' ? theme.colors.text : theme.colors.textSecondary) },
-          activeTab === 'hids' && styles.tabItemTextActive,
-        ]}>
-          Hids
-        </Text>
-      </TouchableOpacity>
-    </View>
-  ), [activeTab, theme]);
+        <TouchableOpacity
+          style={[
+            styles.tabItem,
+            highlightedTab === 'hids' && { borderBottomColor: transparent ? 'white' : theme.colors.accent },
+          ]}
+          onPress={() => scrollToTab('hids')}
+          activeOpacity={0.7}
+        >
+          <Text style={[
+            styles.tabItemText,
+            { color: transparent
+              ? (highlightedTab === 'hids' ? 'white' : 'rgba(255,255,255,0.6)')
+              : (highlightedTab === 'hids' ? theme.colors.text : theme.colors.textSecondary) },
+            highlightedTab === 'hids' && styles.tabItemTextActive,
+          ]}>
+            Weëls
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }, [theme, scrollToTab]);
 
   const listHeader = useMemo(() => (
     <>
@@ -1340,7 +1733,7 @@ const LandingScreen: React.FC = () => {
         </>
       )}
     </>
-  ), [theme, trendingPosts, featuredPosts, trendingIndex, featuredIndex, feedPosts.length > 0, userCreatedCommunities, isMember, joiningId, user, heroIndex, renderTabBar]);
+  ), [theme, trendingPosts, featuredPosts, trendingIndex, featuredIndex, feedPosts.length > 0, userCreatedCommunities, isMember, joiningId, user, heroIndex, renderTabBar, categoriesExpanded]);
 
   const renderPostItem = useCallback(({ item }: { item: Post }) => (
     <PostCard
@@ -1376,6 +1769,7 @@ const LandingScreen: React.FC = () => {
       isActive={index === hidsActiveIndex && activeTab === 'hids'}
       height={containerHeight}
       onComment={handleComment}
+      onScrubbing={setVideoScrubbingBoth}
     />
   ), [hidsActiveIndex, activeTab, containerHeight, handleComment]);
 
@@ -1396,18 +1790,49 @@ const LandingScreen: React.FC = () => {
   const isHidsMode = activeTab === 'hids';
 
   return (
-    <View
-      style={[styles.container, { backgroundColor: isHidsMode ? '#000' : theme.colors.background }]}
+    <Animated.View
+      style={[styles.container, { backgroundColor: containerBg }]}
       onLayout={(e) => setContainerHeight(e.nativeEvent.layout.height)}
     >
-      {/* Header in normal flow (only for Flow mode) */}
-      {!isHidsMode && (
-        <Header onNotificationsPress={handleNotificationsPress} onMenuPress={() => setDrawerVisible(true)} />
-      )}
+      {/* Header — two layers cross-fading between normal and transparent */}
+      <View
+        style={styles.headerOverlay}
+        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+        pointerEvents="box-none"
+      >
+        {/* Normal header (dark icons, solid bg) — visible on Wall */}
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerNormalOpacity }]} pointerEvents={isHidsMode ? 'none' : 'auto'}>
+          <Header onNotificationsPress={handleNotificationsPress} onMenuPress={() => setDrawerVisible(true)} />
+        </Animated.View>
+        {/* Transparent header (white icons) — visible on Weëls */}
+        <Animated.View style={{ opacity: headerTransparentOpacity }} pointerEvents={isHidsMode ? 'auto' : 'none'}>
+          <Header onNotificationsPress={handleNotificationsPress} onMenuPress={() => setDrawerVisible(true)} transparent />
+        </Animated.View>
+      </View>
+      {/* StatusBar — after Headers so it takes precedence */}
+      <StatusBar
+        barStyle={isHidsMode ? 'light-content' : (theme.dark ? 'light-content' : 'dark-content')}
+        backgroundColor="transparent"
+        translucent
+      />
 
-      {/* Content area */}
+      {/* Content area wrapper — sticky tabs position relative to this */}
       <View style={{ flex: 1 }}>
-        <View style={activeTab === 'flow' ? { flex: 1 } : { height: 0, overflow: 'hidden' }}>
+      <ScrollView
+        ref={tabScrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={handleTabScrollEvent}
+        onMomentumScrollEnd={handleTabScrollEnd}
+        bounces={false}
+        nestedScrollEnabled
+        scrollEnabled={!videoScrubbing}
+        style={{ flex: 1 }}
+      >
+        {/* Page 1: Wall */}
+        <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
           <FlatList
             ref={flatListRef}
             data={feedPosts}
@@ -1420,13 +1845,14 @@ const LandingScreen: React.FC = () => {
               </View>
             ) : null}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: insets.bottom + SPACING.xl }}
+            contentContainerStyle={{ paddingTop: headerHeight, paddingBottom: insets.bottom + SPACING.xl }}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
                 onRefresh={onRefresh}
                 tintColor={theme.colors.accent}
                 colors={[theme.colors.accent]}
+                progressViewOffset={headerHeight}
               />
             }
             onEndReached={loadMorePosts}
@@ -1438,10 +1864,8 @@ const LandingScreen: React.FC = () => {
           />
         </View>
 
-        <View style={[
-          activeTab === 'hids' ? { flex: 1 } : { height: 0, overflow: 'hidden' },
-          activeTab === 'hids' && !hidsReady && { opacity: 0 },
-        ]}>
+        {/* Page 2: Weëls */}
+        <View style={{ width: SCREEN_WIDTH, flex: 1, backgroundColor: '#000' }}>
           {containerHeight > 0 && videoPosts.length > 0 ? (
             <FlatList
               ref={hidsListRef}
@@ -1449,6 +1873,7 @@ const LandingScreen: React.FC = () => {
               renderItem={renderHidItem}
               keyExtractor={(item: Post) => `hid-${item.id}`}
               pagingEnabled
+              scrollEnabled={!videoScrubbing}
               showsVerticalScrollIndicator={false}
               getItemLayout={hidsGetItemLayout}
               windowSize={3}
@@ -1458,49 +1883,48 @@ const LandingScreen: React.FC = () => {
             />
           ) : (
             <View style={styles.hidsEmptyState}>
-              <Ionicons name="videocam-outline" size={scale(48)} color={isHidsMode ? 'rgba(255,255,255,0.5)' : theme.colors.textSecondary} />
-              <Text style={[styles.hidsEmptyTitle, { color: isHidsMode ? 'white' : theme.colors.text }]}>No hay hids</Text>
-              <Text style={[styles.hidsEmptySubtitle, { color: isHidsMode ? 'rgba(255,255,255,0.6)' : theme.colors.textSecondary }]}>
+              <Ionicons name="videocam-outline" size={scale(48)} color="rgba(255,255,255,0.5)" />
+              <Text style={[styles.hidsEmptyTitle, { color: 'white' }]}>No hay hids</Text>
+              <Text style={[styles.hidsEmptySubtitle, { color: 'rgba(255,255,255,0.6)' }]}>
                 Aún no hay videos disponibles
               </Text>
             </View>
           )}
         </View>
+      </ScrollView>
 
-        {/* Sticky tab bar — only in Flow mode, slides in when scrolled past inline tabs */}
-        {!isHidsMode && (
-          <Animated.View
-            pointerEvents={isTabsSticky ? 'auto' : 'none'}
-            style={[
-              styles.tabBarStickyWrapper,
-              {
-                backgroundColor: theme.colors.background,
-                opacity: stickyAnim,
-                transform: [{
-                  translateY: stickyAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [-scale(44), 0],
-                  }),
-                }],
-              },
-            ]}
-          >
+        {/* Sticky tab bar — cross-fade between normal and transparent */}
+        <Animated.View
+          pointerEvents={(isHidsMode || isTabsSticky) ? 'auto' : 'none'}
+          style={[
+            styles.tabBarStickyWrapper,
+            {
+              top: headerHeight,
+            },
+          ]}
+        >
+          {/* Normal tab bar (solid bg) — visible on Wall only when sticky */}
+          <Animated.View style={[StyleSheet.absoluteFill, {
+            opacity: Animated.multiply(stickyAnim, headerNormalOpacity),
+            transform: [{
+              translateY: stickyAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-scale(44), 0],
+              }),
+            }],
+          }]} pointerEvents={isHidsMode ? 'none' : 'auto'}>
             {renderTabBar()}
           </Animated.View>
-        )}
+          {/* Transparent tab bar (white text) — visible on Weëls */}
+          <Animated.View style={{ opacity: headerTransparentOpacity }} pointerEvents={isHidsMode ? 'auto' : 'none'}>
+            {renderTabBar(true)}
+          </Animated.View>
+        </Animated.View>
       </View>
-
-      {/* Hids mode: transparent Header + Tabs overlay */}
-      {isHidsMode && (
-        <View style={styles.hidsOverlay} pointerEvents="box-none">
-          <Header onNotificationsPress={handleNotificationsPress} onMenuPress={() => setDrawerVisible(true)} transparent />
-          {renderTabBar(true)}
-        </View>
-      )}
 
       {/* Drawer menu */}
       <DrawerMenu visible={drawerVisible} onClose={() => setDrawerVisible(false)} />
-    </View>
+    </Animated.View>
   );
 };
 
@@ -1540,7 +1964,7 @@ const styles = StyleSheet.create({
   },
   constellationDot: {
     position: 'absolute',
-    backgroundColor: 'rgba(167, 139, 250, 0.8)',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
     borderRadius: 999,
   },
   dotLg: {
@@ -1554,7 +1978,7 @@ const styles = StyleSheet.create({
   dotSm: {
     width: scale(2.5),
     height: scale(2.5),
-    backgroundColor: 'rgba(196, 181, 253, 0.7)',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
   },
   constellationLine: {
     position: 'absolute',
@@ -1582,10 +2006,10 @@ const styles = StyleSheet.create({
   },
   heroImage: {
     position: 'absolute',
-    right: -scale(8),
-    bottom: 0,
-    width: scale(100),
-    height: scale(100),
+    right: scale(2),
+    bottom: -scale(13),
+    width: scale(130),
+    height: scale(130),
   },
   heroTitle: {
     fontSize: scale(16),
@@ -1645,11 +2069,16 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg,
     paddingVertical: SPACING.lg,
   },
+  categoriesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.lg,
+    marginBottom: SPACING.sm,
+  },
   categoriesTitle: {
     fontSize: FONT_SIZE.lg,
     fontWeight: FONT_WEIGHT.bold,
-    marginBottom: SPACING.md,
-    paddingHorizontal: SPACING.lg,
   },
   categoriesScrollContent: {
     paddingHorizontal: SPACING.lg,
@@ -1779,6 +2208,23 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     borderRadius: BORDER_RADIUS.lg,
   },
+  trendingBody: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+  },
+  trendingLeft: {
+    flex: 1,
+  },
+  cardThumb: {
+    width: scale(70),
+    height: scale(70),
+    borderRadius: BORDER_RADIUS.md,
+    overflow: 'hidden',
+  },
+  cardThumbMedia: {
+    width: '100%',
+    height: '100%',
+  },
   trendingHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1890,10 +2336,17 @@ const styles = StyleSheet.create({
     fontWeight: FONT_WEIGHT.bold,
   },
 
-  // Hids overlay (transparent header + tabs)
-  hidsOverlay: {
+  // Header always as overlay
+  headerOverlay: {
     position: 'absolute',
     top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+  },
+  // Hids tabs below header
+  hidsTabsOnly: {
+    position: 'absolute',
     left: 0,
     right: 0,
     zIndex: 20,

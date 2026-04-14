@@ -26,9 +26,14 @@ export interface Message {
   content: string;
   timestamp: Timestamp;
   read: boolean;
-  type: 'text' | 'image' | 'file';
+  type: 'text' | 'image' | 'file' | 'audio';
   imageUrl?: string;
   fileUrl?: string;
+  audioUrl?: string;
+  audioDuration?: number;
+  viewOnce?: boolean;       // true = photo disappears after viewing
+  viewOnceOpened?: boolean;  // true = recipient already opened it
+  ephemeral?: boolean;      // true = message sent in vanish mode
 }
 
 export interface ParticipantData {
@@ -52,6 +57,9 @@ export interface Conversation {
   };
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  ephemeral?: boolean;             // vanish mode active
+  activeInChat?: string[];         // user IDs currently viewing the conversation
+  bubbleColors?: { [userId: string]: string };  // per-user bubble colors
 }
 
 class MessagesService {
@@ -126,8 +134,10 @@ class MessagesService {
     conversationId: string,
     senderId: string,
     content: string,
-    type: 'text' | 'image' | 'file' = 'text',
-    mediaUrl?: string
+    type: 'text' | 'image' | 'file' | 'audio' = 'text',
+    mediaUrl?: string,
+    viewOnce?: boolean,
+    audioDuration?: number
   ): Promise<string> {
     try {
       const messagesRef = collection(db, 'conversations', conversationId, 'messages');
@@ -143,15 +153,29 @@ class MessagesService {
 
       if (type === 'image' && mediaUrl) {
         newMessage.imageUrl = mediaUrl;
+      } else if (type === 'audio' && mediaUrl) {
+        newMessage.audioUrl = mediaUrl;
+        if (audioDuration) newMessage.audioDuration = audioDuration;
       } else if (type === 'file' && mediaUrl) {
         newMessage.fileUrl = mediaUrl;
+      }
+
+      if (viewOnce) {
+        newMessage.viewOnce = true;
+        newMessage.viewOnceOpened = false;
+      }
+
+      // Check if conversation is in ephemeral mode
+      const conversationRef = doc(db, 'conversations', conversationId);
+      const convSnap = await getDoc(conversationRef);
+      if (convSnap.exists() && convSnap.data().ephemeral) {
+        newMessage.ephemeral = true;
       }
 
       // Agregar mensaje
       const messageDoc = await addDoc(messagesRef, newMessage);
 
       // Actualizar último mensaje en la conversación
-      const conversationRef = doc(db, 'conversations', conversationId);
       await updateDoc(conversationRef, {
         lastMessage: {
           content,
@@ -265,6 +289,137 @@ class MessagesService {
       console.error('Error marcando mensajes como leídos:', error);
       throw error;
     }
+  }
+
+  /**
+   * Mark a view-once photo as opened
+   */
+  async markViewOnceOpened(conversationId: string, messageId: string): Promise<void> {
+    try {
+      const messageRef = doc(db, 'conversations', conversationId, 'messages', messageId);
+      await updateDoc(messageRef, { viewOnceOpened: true });
+    } catch (error) {
+      console.error('Error marking view-once as opened:', error);
+    }
+  }
+
+  /**
+   * Set bubble color for a conversation
+   */
+  async setBubbleColor(conversationId: string, userId: string, color: string): Promise<void> {
+    try {
+      const convRef = doc(db, 'conversations', conversationId);
+      await updateDoc(convRef, { [`bubbleColors.${userId}`]: color });
+    } catch (error) {
+      console.error('Error setting bubble color:', error);
+    }
+  }
+
+  /**
+   * Toggle ephemeral (vanish) mode on a conversation
+   */
+  async toggleEphemeral(conversationId: string, enabled: boolean): Promise<void> {
+    try {
+      const convRef = doc(db, 'conversations', conversationId);
+      await updateDoc(convRef, { ephemeral: enabled });
+    } catch (error) {
+      console.error('Error toggling ephemeral mode:', error);
+    }
+  }
+
+  /**
+   * Mark user as active/inactive in conversation (for ephemeral cleanup)
+   */
+  async setActiveInChat(conversationId: string, userId: string, active: boolean): Promise<void> {
+    try {
+      const convRef = doc(db, 'conversations', conversationId);
+      if (active) {
+        await updateDoc(convRef, { activeInChat: arrayUnion(userId) });
+      } else {
+        // Remove user from active list
+        const convSnap = await getDoc(convRef);
+        if (convSnap.exists()) {
+          const data = convSnap.data();
+          const currentActive = data.activeInChat || [];
+          const updated = currentActive.filter((id: string) => id !== userId);
+          await updateDoc(convRef, { activeInChat: updated });
+
+          // If both users left and ephemeral is on, delete ephemeral messages
+          if (data.ephemeral && updated.length === 0) {
+            await this.deleteEphemeralMessages(conversationId);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error setting active in chat:', error);
+    }
+  }
+
+  /**
+   * Cleanup: remove ephemeral messages that are already marked deleted
+   * Called when user enters a conversation to ensure no flash of old messages
+   */
+  async cleanupEphemeralMessages(conversationId: string): Promise<void> {
+    try {
+      const messagesRef = collection(db, 'conversations', conversationId, 'messages');
+      const q = query(messagesRef, where('ephemeral', '==', true), where('deleted', '==', true));
+      const snapshot = await getDocs(q);
+      // Actually delete the documents from Firestore
+      const deletions = snapshot.docs.map(d =>
+        updateDoc(doc(db, 'conversations', conversationId, 'messages', d.id), { content: '', deleted: true })
+      );
+      await Promise.all(deletions);
+    } catch (error) {
+      // Silently fail - these are cleanup operations
+    }
+  }
+
+  /**
+   * Delete all ephemeral messages in a conversation
+   */
+  private async deleteEphemeralMessages(conversationId: string): Promise<void> {
+    try {
+      const messagesRef = collection(db, 'conversations', conversationId, 'messages');
+      const q = query(messagesRef, where('ephemeral', '==', true));
+      const snapshot = await getDocs(q);
+
+      const batch: Promise<void>[] = [];
+      snapshot.forEach((document) => {
+        batch.push(
+          updateDoc(doc(db, 'conversations', conversationId, 'messages', document.id), {
+            content: '',
+            imageUrl: null,
+            ephemeral: true,
+            deleted: true,
+          })
+        );
+      });
+
+      await Promise.all(batch);
+
+      // Update last message if needed
+      const convRef = doc(db, 'conversations', conversationId);
+      await updateDoc(convRef, {
+        lastMessage: { content: 'Modo efímero', senderId: '', timestamp: Timestamp.now(), read: true },
+      });
+    } catch (error) {
+      console.error('Error deleting ephemeral messages:', error);
+    }
+  }
+
+  /**
+   * Subscribe to conversation metadata (for ephemeral state)
+   */
+  subscribeToConversation(
+    conversationId: string,
+    callback: (conversation: Conversation) => void
+  ): () => void {
+    const convRef = doc(db, 'conversations', conversationId);
+    return onSnapshot(convRef, (snap) => {
+      if (snap.exists()) {
+        callback({ id: snap.id, ...snap.data() } as Conversation);
+      }
+    });
   }
 
   /**

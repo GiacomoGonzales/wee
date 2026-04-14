@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "HideTok",
+    "name": "Weë",
     "slug": "hidetok-simple",
-    "scheme": "hidetok",
+    "scheme": "wee",
     "version": "1.0.0",
     "orientation": "portrait",
     "platforms": [
@@ -18,11 +18,12 @@
     },
     "jsEngine": "hermes",
     "android": {
-      "package": "com.hidetok.app",
-      "versionCode": 3,
+      "googleServicesFile": "./google-services.json",
+      "package": "zone.wee.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0A0A0A"
+        "backgroundColor": "#FFFFFF"
       },
       "enableHermes": true,
       "splash": {
@@ -32,7 +33,7 @@
       },
       "userInterfaceStyle": "automatic",
       "backgroundColor": "#0A0A0A",
-      "softwareKeyboardLayoutMode": "pan",
+      "softwareKeyboardLayoutMode": "resize",
       "intentFilters": [
         {
           "action": "VIEW",
@@ -40,12 +41,12 @@
           "data": [
             {
               "scheme": "https",
-              "host": "hidetok.com",
+              "host": "wee.zone",
               "pathPrefix": "/post"
             },
             {
               "scheme": "https",
-              "host": "www.hidetok.com",
+              "host": "www.wee.zone",
               "pathPrefix": "/post"
             }
           ],
@@ -58,7 +59,8 @@
       "runtimeVersion": "1.0.0"
     },
     "ios": {
-      "bundleIdentifier": "com.hidetok.app",
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "bundleIdentifier": "zone.wee.app",
       "supportsTablet": false,
       "splash": {
         "image": "./assets/splash-icon.png",
@@ -73,26 +75,26 @@
       "userInterfaceStyle": "automatic",
       "backgroundColor": "#0A0A0A",
       "associatedDomains": [
-        "applinks:hidetok.com",
-        "applinks:www.hidetok.com"
+        "applinks:wee.zone",
+        "applinks:www.wee.zone"
       ],
       "infoPlist": {
         "UIViewControllerBasedStatusBarAppearance": false,
         "UIStatusBarStyle": "UIStatusBarStyleLightContent",
-        "NSCameraUsageDescription": "HideTok necesita acceso a tu cámara para que puedas tomar fotos y videos para compartir en tus publicaciones.",
-        "NSMicrophoneUsageDescription": "HideTok necesita acceso a tu micrófono para grabar audio en tus videos.",
-        "NSPhotoLibraryUsageDescription": "HideTok necesita acceso a tu galería para que puedas seleccionar fotos y videos para compartir.",
+        "NSCameraUsageDescription": "Weë necesita acceso a tu cámara para que puedas tomar fotos y videos para compartir en tus publicaciones.",
+        "NSMicrophoneUsageDescription": "Weë necesita acceso a tu micrófono para grabar audio en tus videos.",
+        "NSPhotoLibraryUsageDescription": "Weë necesita acceso a tu galería para que puedas seleccionar fotos y videos para compartir.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "web": {
       "bundler": "metro",
       "favicon": "./assets/favicon.png",
-      "name": "HideTok - La comunidad del futuro",
-      "shortName": "HideTok",
-      "description": "Comparte de forma real y anónima con HideTok. Crea tu alter ego digital, opina libremente y conecta con una comunidad sin filtros.",
+      "name": "Weë - La comunidad del futuro",
+      "shortName": "Weë",
+      "description": "Comparte de forma real y anónima con Weë. Crea tu alter ego digital, opina libremente y conecta con una comunidad sin filtros.",
       "backgroundColor": "#0A0A0A",
-      "themeColor": "#8B5CF6",
+      "themeColor": "#F5B731",
       "orientation": "portrait-primary"
     },
     "extra": {
@@ -106,14 +108,14 @@
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
-          "color": "#8B5CF6",
+          "color": "#F5B731",
           "defaultChannel": "default"
         }
       ],
       [
         "@react-native-google-signin/google-signin",
         {
-          "iosUrlScheme": "com.googleusercontent.apps.600935858829-v7m2m7j21k2sae85u0cd1mnsuq0vds0b"
+          "iosUrlScheme": "com.googleusercontent.apps.600935858829-f92ar5236mquqjdnpumddlpkp87qqfdm"
         }
       ],
       "react-native-compressor"

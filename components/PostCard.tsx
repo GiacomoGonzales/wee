@@ -23,6 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import ShareablePostCard from './ShareablePostCard';
+import { cloudinaryThumb, cloudinaryFeed } from '../services/cloudinaryService';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useTheme } from '../contexts/ThemeContext';
@@ -152,7 +153,7 @@ const PostCard: React.FC<PostCardProps> = ({
   const [localViews, setLocalViews] = useState(post.views || 0);
   const [isSharing, setIsSharing] = useState(false);
   const [showShareCard, setShowShareCard] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
   const [userPaused, setUserPaused] = useState(false);
   const videoRef = useRef<Video>(null);
@@ -385,7 +386,7 @@ const PostCard: React.FC<PostCardProps> = ({
     if (Platform.OS === 'web') {
       try {
         await Share.share({
-          message: `${postToShare.content}\n\n- Publicado en HideTok`,
+          message: `${postToShare.content}\n\n- Publicado en Weë`,
         });
       } catch (error) {
         console.error('Error sharing on web:', error);
@@ -418,7 +419,7 @@ const PostCard: React.FC<PostCardProps> = ({
           } else {
             // Fallback a Share nativo con texto
             await Share.share({
-              message: `${postToShare.content}\n\n- Publicado en HideTok`,
+              message: `${postToShare.content}\n\n- Publicado en Weë`,
             });
           }
         } else {
@@ -432,7 +433,7 @@ const PostCard: React.FC<PostCardProps> = ({
       // Fallback a share de texto
       try {
         await Share.share({
-          message: `${postToShare.content}\n\n- Publicado en HideTok`,
+          message: `${postToShare.content}\n\n- Publicado en Weë`,
         });
       } catch (e) {
         Alert.alert('Error', 'No se pudo compartir la publicación');
@@ -614,6 +615,25 @@ const PostCard: React.FC<PostCardProps> = ({
     }
   }, [isPlaying]);
 
+  // Show brief pause icon when pausing
+  const [showPauseIcon, setShowPauseIcon] = useState(false);
+  const pauseIconTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleVideoTap = useCallback(async () => {
+    if (!videoRef.current) return;
+    if (pauseIconTimer.current) clearTimeout(pauseIconTimer.current);
+    if (isPlaying) {
+      await videoRef.current.pauseAsync();
+      setUserPaused(true);
+      setShowPauseIcon(true);
+    } else {
+      await videoRef.current.playAsync();
+      setUserPaused(false);
+      setShowPauseIcon(true);
+      pauseIconTimer.current = setTimeout(() => setShowPauseIcon(false), 600);
+    }
+  }, [isPlaying]);
+
   const toggleMute = useCallback(async () => {
     if (!videoRef.current) return;
     const newMuted = !isMuted;
@@ -634,7 +654,7 @@ const PostCard: React.FC<PostCardProps> = ({
       <View style={styles.videoContainer}>
         <TouchableOpacity
           activeOpacity={0.95}
-          onPress={onVideoPress ? () => onVideoPress(displayPost, playbackPositionRef.current) : togglePlayPause}
+          onPress={onVideoPress ? () => onVideoPress(displayPost, playbackPositionRef.current) : handleVideoTap}
           style={styles.videoTouchable}
         >
           <Video
@@ -651,11 +671,11 @@ const PostCard: React.FC<PostCardProps> = ({
             usePoster={!!displayPost.imageUrls?.[0]}
           />
 
-          {/* Play/Pause overlay (shows only when user taps to pause) */}
-          {userPaused && (
+          {/* Play/Pause icon overlay */}
+          {showPauseIcon && (
             <View style={styles.videoPlayOverlay}>
               <View style={styles.videoPlayButton}>
-                <Ionicons name="play" size={scale(40)} color="white" />
+                <Ionicons name={userPaused ? 'pause' : 'play'} size={scale(40)} color="white" />
               </View>
             </View>
           )}
@@ -687,9 +707,14 @@ const PostCard: React.FC<PostCardProps> = ({
 
     const thumbnails = displayPost.imageUrlsThumbnails || [];
 
+    // Helper: get thumbnail from stored thumbnails or generate via Cloudinary
+    const getThumb = (index: number, url: string) => {
+      const stored = typeof thumbnails[index] === 'string' ? thumbnails[index] : undefined;
+      return stored || cloudinaryThumb(url);
+    };
+
     if (displayPost.imageUrls.length === 1) {
-      // Validar que el thumbnail sea un string válido
-      const thumbnail = typeof thumbnails[0] === 'string' ? thumbnails[0] : undefined;
+      const thumbnail = getThumb(0, displayPost.imageUrls[0]);
 
       // Usar aspect ratio real si está disponible, sino usar 4:3 por defecto
       const aspectRatio = imageDimensions?.aspectRatio || (4/3);
@@ -710,7 +735,7 @@ const PostCard: React.FC<PostCardProps> = ({
           activeOpacity={0.98}
         >
           <Image
-            source={{ uri: displayPost.imageUrls[0] }}
+            source={{ uri: cloudinaryFeed(displayPost.imageUrls[0]) }}
             placeholder={thumbnail ? { uri: thumbnail } : undefined}
             placeholderContentFit="cover"
             style={[
@@ -756,8 +781,7 @@ const PostCard: React.FC<PostCardProps> = ({
           style={styles.carousel}
         >
           {displayPost.imageUrls.map((imageUrl, index) => {
-            // Validar que el thumbnail sea un string válido
-            const thumbnail = typeof thumbnails[index] === 'string' ? thumbnails[index] : undefined;
+            const thumbnail = getThumb(index, imageUrl);
 
             return (
               <TouchableOpacity
@@ -768,7 +792,7 @@ const PostCard: React.FC<PostCardProps> = ({
                 activeOpacity={0.98}
               >
                 <Image
-                  source={{ uri: imageUrl }}
+                  source={{ uri: cloudinaryFeed(imageUrl) }}
                   placeholder={thumbnail ? { uri: thumbnail } : undefined}
                 placeholderContentFit="cover"
                 style={[
@@ -1021,9 +1045,6 @@ const PostCard: React.FC<PostCardProps> = ({
                 backgroundColor={theme.colors.accent}
                 showBorder={false}
               />
-              <View style={[styles.anonymousBadge, { backgroundColor: theme.colors.surface }]}>
-                <Ionicons name="eye-off" size={scale(10)} color={theme.colors.accent} />
-              </View>
             </View>
           ) : (
             // Fallback si no se encuentra el autor
@@ -1310,7 +1331,7 @@ const PostCard: React.FC<PostCardProps> = ({
       {/* Loading overlay while sharing */}
       {isSharing && (
         <View style={styles.sharingOverlay}>
-          <ActivityIndicator size="large" color="#8B5CF6" />
+          <ActivityIndicator size="large" color="#F5B731" />
           <Text style={styles.sharingText}>Preparando imagen...</Text>
         </View>
       )}
@@ -1526,7 +1547,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(8),
     paddingVertical: scale(2),
     borderRadius: scale(10),
-    backgroundColor: 'rgba(139, 92, 246, 0.15)',
+    backgroundColor: 'rgba(245, 183, 49, 0.15)',
   },
   agreementText: {
     fontSize: FONT_SIZE.xs,

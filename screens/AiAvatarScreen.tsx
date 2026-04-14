@@ -558,7 +558,7 @@ const AiAvatarScreen: React.FC = () => {
       <View style={[styles.disclaimerBanner, { backgroundColor: theme.colors.accent + '15', borderColor: theme.colors.accent + '30' }]}>
         <Ionicons name="information-circle-outline" size={scale(20)} color={theme.colors.accent} />
         <Text style={[styles.disclaimerText, { color: theme.colors.text }]}>
-          Crea un avatar generado por IA o sube una foto para usar como avatar en tu perfil HIDI.
+          Crea un avatar generado por IA o sube una foto para usar como avatar en tu perfil Weë.
         </Text>
       </View>
 

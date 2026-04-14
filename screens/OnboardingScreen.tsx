@@ -291,10 +291,10 @@ const OnboardingScreen: React.FC = () => {
           <Ionicons name="shield-checkmark" size={40} color={theme.colors.accent} />
         </View>
         <Text style={[styles.title, { color: theme.colors.text }]}>
-          Bienvenido a HideTok
+          Bienvenido a Weë
         </Text>
         <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-          Configura tu perfil principal. Después podrás crear un perfil HIDI anónimo desde tu perfil.
+          Configura tu perfil principal. Después podrás crear un perfil Weë anónimo desde tu perfil.
         </Text>
       </View>
 
@@ -330,7 +330,7 @@ const OnboardingScreen: React.FC = () => {
           Fecha de nacimiento
         </Text>
         <Text style={[styles.inputHint, { color: theme.colors.textSecondary }]}>
-          Debes tener al menos 13 años para usar HideTok.
+          Debes tener al menos 13 años para usar Weë.
         </Text>
         <View style={styles.dateSelectorsRow}>
           {/* Día */}

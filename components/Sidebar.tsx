@@ -128,7 +128,7 @@ const Sidebar: React.FC = () => {
           />
           <SidebarItem
             icon="mail"
-            label="Mensajes"
+            label="WeëTalk"
             active={isActive('Inbox')}
             onPress={() => handleNavigate('Inbox')}
           />

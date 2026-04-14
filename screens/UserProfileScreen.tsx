@@ -113,7 +113,7 @@ const UserProfileScreen: React.FC = () => {
 
     try {
       await Share.share({
-        message: `¡Mira el perfil de @${userProfile.displayName} en HideTok!\n\n${userProfile.bio || 'Usuario de HideTok'}`,
+        message: `¡Mira el perfil de @${userProfile.displayName} en Weë!\n\n${userProfile.bio || 'Usuario de Weë'}`,
       });
     } catch (error) {
       console.error('Error sharing profile:', error);

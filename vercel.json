@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npx expo export -p web && cp public/privacy-policy.html public/support.html public/terms.html public/landing.html dist/",
+  "buildCommand": "npx expo export -p web && cp public/privacy-policy.html public/support.html public/terms.html public/landing.html public/app.html dist/ && cp -r public/img dist/img",
   "outputDirectory": "dist",
   "rewrites": [
     {
@@ -15,8 +15,12 @@
       "destination": "/support.html"
     },
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "source": "/app",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/",
+      "destination": "/landing.html"
     }
   ]
 }

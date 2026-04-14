@@ -2,7 +2,7 @@
  * AI Integration for Avatar Generation & Person Replacement
  *
  * Architecture:
- * - Gemini 2.5 Flash Image (API key): Avatar generation + Person replacement
+ * - Gemini 3 Pro Image Preview (API key): Avatar generation + Person replacement
  *   Uses generateContent with both images as input (like the Gemini chatbot)
  */
 
@@ -104,14 +104,14 @@ export interface AvatarConfig {
 // ============================================
 
 /**
- * Generates an avatar image using Gemini 2.5 Flash Image
+ * Generates an avatar image using Gemini 3 Pro Image Preview
  */
 export async function generateAvatarWithImagen(
   avatarConfig: AvatarConfig,
 ): Promise<string> {
   const prompt = buildAvatarPrompt(avatarConfig);
 
-  console.log('Generating avatar with Gemini 2.5 Flash Image...');
+  console.log('Generating avatar with Gemini 3 Pro Image Preview...');
   console.log('Prompt:', prompt.substring(0, 200) + '...');
 
   const ai = await getGenAI();
@@ -123,10 +123,11 @@ export async function generateAvatarWithImagen(
   try {
     response = await withTimeout(
       ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
+        model: 'gemini-3-pro-image-preview',
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
           responseModalities: ['IMAGE', 'TEXT'],
+          aspectRatio: '9:16',
         },
       }),
       90_000, // 90s timeout (function has 120s total)
@@ -204,13 +205,12 @@ function buildAvatarPrompt(config: AvatarConfig): string {
 }
 
 // ============================================
-// PERSON REPLACEMENT (Gemini 2.5 Flash Image - same as Gemini chatbot)
+// PERSON REPLACEMENT (Gemini 3 Pro Image Preview)
 // ============================================
 
 /**
- * Replaces a person in a photo with the avatar using Gemini 2.5 Flash Image.
- * Sends both images to generateContent with a simple prompt - the same approach
- * that works in the Gemini chatbot.
+ * Replaces a person in a photo with the avatar using Gemini 3 Pro Image Preview.
+ * Sends both images to generateContent with a simple prompt.
  */
 export async function replacePersonWithAvatar(
   selfieBase64: string,
@@ -218,7 +218,7 @@ export async function replacePersonWithAvatar(
   avatarBase64: string,
   avatarMimeType: string,
 ): Promise<string> {
-  console.log('Replacing person with Gemini 2.5 Flash Image (generateContent)...');
+  console.log('Replacing person with Gemini 3 Pro Image Preview...');
   console.log(`  Selfie original: ${selfieBase64.length} chars (${selfieMimeType})`);
   console.log(`  Avatar original: ${avatarBase64.length} chars (${avatarMimeType})`);
 
@@ -240,7 +240,7 @@ export async function replacePersonWithAvatar(
   try {
     response = await withTimeout(
       ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
+        model: 'gemini-3-pro-image-preview',
         contents: [
           {
             role: 'user',
@@ -258,13 +258,14 @@ export async function replacePersonWithAvatar(
                 },
               },
               {
-                text: 'Replace the person in the first photo with the person from the second photo. Keep the same pose, scene, background, and lighting. The result should look like a natural, real photograph.',
+                text: `Recreate the exact same scene from Image 1 (same background, same angle, same lighting, same pose, same framing) but the person in the photo must be the person from Image 2 instead. Completely remove the original person and place the person from Image 2 in their exact position, as if the person from Image 2 was the one who took this photo or was photographed in this scene. The original person should NOT appear anywhere in the result. Output a single natural-looking photograph.`,
               },
             ],
           },
         ],
         config: {
           responseModalities: ['IMAGE', 'TEXT'],
+          aspectRatio: '9:16',
         },
       }),
       240_000, // 240s timeout (function has 300s total)
@@ -293,7 +294,7 @@ export async function replacePersonWithAvatar(
   for (const part of parts) {
     if (part.inlineData?.data) {
       const mimeType = part.inlineData.mimeType || 'image/png';
-      console.log('Person replacement succeeded with Gemini 2.5 Flash Image');
+      console.log('Person replacement succeeded with Gemini 3 Pro Image Preview');
       return `data:${mimeType};base64,${part.inlineData.data}`;
     }
   }

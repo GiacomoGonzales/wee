@@ -8,11 +8,11 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
-  Image,
   Platform,
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -229,6 +229,9 @@ const AvatarPicker: React.FC<AvatarPickerProps> = ({
         <Image
           source={{ uri: currentAvatar }}
           style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          transition={0}
         />
       );
     }

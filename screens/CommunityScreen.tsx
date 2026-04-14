@@ -23,6 +23,7 @@ import { postsService, Post } from '../services/firestoreService';
 import PostCard from '../components/PostCard';
 import { MainStackParamList } from '../navigation/MainStackNavigator';
 import { SPACING, FONT_SIZE, FONT_WEIGHT, BORDER_RADIUS } from '../constants/design';
+import AvatarDisplay from '../components/avatars/AvatarDisplay';
 import { scale } from '../utils/scale';
 
 type CommunityScreenRouteProp = RouteProp<MainStackParamList, 'Community'>;
@@ -278,6 +279,33 @@ const CommunityScreen: React.FC = () => {
               </View>
             )}
           </View>
+        )}
+
+        {/* Create post prompt */}
+        {user && userProfile && (
+          <TouchableOpacity
+            style={[styles.createPrompt, { backgroundColor: theme.colors.card }]}
+            onPress={() => (navigation as any).navigate('Create', { communityId: community?.slug || communityId })}
+            activeOpacity={0.7}
+          >
+            <AvatarDisplay
+              size={36}
+              avatarType={userProfile.avatarType || 'predefined'}
+              avatarId={userProfile.avatarId || 'male'}
+              photoURL={userProfile.photoURL}
+              backgroundColor={theme.colors.accent}
+              showBorder={false}
+            />
+            <View style={[styles.createInput, { backgroundColor: theme.colors.surface }]}>
+              <Text style={[styles.createPlaceholder, { color: theme.colors.textSecondary }]}>
+                ¿Qué quieres compartir?
+              </Text>
+            </View>
+            <View style={styles.createActions}>
+              <Ionicons name="image-outline" size={22} color={theme.colors.accent} />
+              <Ionicons name="videocam-outline" size={22} color={theme.colors.accent} />
+            </View>
+          </TouchableOpacity>
         )}
 
         {/* Feed Tabs */}
@@ -575,6 +603,29 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     flex: 1,
     lineHeight: scale(20),
+  },
+  createPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: SPACING.md,
+    marginHorizontal: SPACING.md,
+    marginTop: SPACING.sm,
+    borderRadius: BORDER_RADIUS.lg,
+    gap: SPACING.sm,
+  },
+  createInput: {
+    flex: 1,
+    height: 36,
+    borderRadius: BORDER_RADIUS.full,
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.md,
+  },
+  createPlaceholder: {
+    fontSize: FONT_SIZE.sm,
+  },
+  createActions: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
   },
   tabsContainer: {
     flexDirection: 'row',

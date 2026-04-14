@@ -3,7 +3,7 @@ import * as Linking from 'expo-linking';
 
 // Prefijos de URL que la app reconoce
 const prefix = Linking.createURL('/');
-const universalLinks = ['https://hidetok.com', 'https://www.hidetok.com'];
+const universalLinks = ['https://wee.zone', 'https://www.wee.zone'];
 
 export const linking: LinkingOptions<any> = {
   prefixes: [prefix, ...universalLinks],
@@ -49,20 +49,20 @@ export const linking: LinkingOptions<any> = {
 
 // Helper para generar URLs compartibles
 export const generatePostUrl = (postId: string): string => {
-  return `https://hidetok.com/post/${postId}`;
+  return `https://wee.zone/post/${postId}`;
 };
 
 export const generateUserUrl = (userId: string): string => {
-  return `https://hidetok.com/user/${userId}`;
+  return `https://wee.zone/user/${userId}`;
 };
 
 export const generateCommunityUrl = (communityId: string): string => {
-  return `https://hidetok.com/community/${communityId}`;
+  return `https://wee.zone/community/${communityId}`;
 };
 
 // URL corta para mostrar en la imagen compartida
 export const getShortUrl = (postId: string): string => {
   // Usar solo los primeros 8 caracteres del ID para hacerlo más corto
   const shortId = postId.slice(0, 8);
-  return `hidetok.com/p/${shortId}`;
+  return `wee.zone/p/${shortId}`;
 };

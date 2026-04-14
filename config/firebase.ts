@@ -12,13 +12,13 @@ console.log('🔥 Starting Firebase initialization...');
 // Configuración de Firebase usando variables de entorno
 // En Expo, las variables EXPO_PUBLIC_* están disponibles en process.env durante el build
 const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyB65ENzyQiC-3bAi1UtWaiEJoea7jBvD-U',
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || 'hidetok-9a642.firebaseapp.com',
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || 'hidetok-9a642',
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || 'hidetok-9a642.firebasestorage.app',
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '600935858829',
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '1:600935858829:web:b6b2b76b27e53c285218c4',
-  measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
+  apiKey: 'AIzaSyAZ_6Lvm-pZ_FchdzkRTI48aYixI10D92A',
+  authDomain: 'get-wee.firebaseapp.com',
+  projectId: 'get-wee',
+  storageBucket: 'get-wee.firebasestorage.app',
+  messagingSenderId: '546769059837',
+  appId: '1:546769059837:web:49e597a11886449ea4a394',
+  measurementId: 'G-JEHZ27C1KY',
 };
 
 // Log para debugging

@@ -101,9 +101,10 @@ export interface UserProfile {
   country?: string; // Código ISO del país (ej: 'AR', 'MX')
   countryName?: string; // Nombre del país (ej: 'Argentina')
 
-  // === HIDI: Sistema de doble identidad ===
-  profileType?: 'real' | 'hidi'; // Tipo de perfil
-  linkedAccountId?: string; // uid del perfil vinculado (real↔hidi)
+  // === HIDI / BIZ: Sistema de identidades ===
+  profileType?: 'real' | 'hidi' | 'biz'; // Tipo de perfil
+  linkedAccountId?: string; // uid del perfil vinculado (real↔hidi↔biz)
+  businessId?: string; // ID del negocio vinculado (solo profileType 'biz')
 
   // === Avatar IA ===
   aiAvatarPortraitUrl?: string;
@@ -613,6 +614,46 @@ export const usersService = {
     }
 
     const docId = await firestoreService.create<UserProfile>('users', hidiProfileData as any);
+    return docId;
+  },
+
+  // === BIZ: Métodos para perfil de negocio ===
+  getBizProfile: async (businessId: string): Promise<UserProfile | null> => {
+    const bizUid = `biz_${businessId}`;
+    const users = await firestoreService.getMany<UserProfile>('users',
+      [{ field: 'uid', operator: '==', value: bizUid }]
+    );
+    return users.length > 0 ? users[0] : null;
+  },
+
+  createBizProfile: async (realUid: string, businessId: string, data: {
+    displayName: string;
+    photoURL?: string;
+  }): Promise<string> => {
+    const bizUid = `biz_${businessId}`;
+    const bizProfileData: Record<string, any> = {
+      uid: bizUid,
+      displayName: data.displayName,
+      email: '',
+      bio: '',
+      avatarType: data.photoURL ? 'custom' : 'predefined',
+      avatarId: 'male',
+      followers: 0,
+      following: 0,
+      posts: 0,
+      joinedCommunities: [],
+      hasCompletedCommunityOnboarding: true,
+      profileType: 'biz',
+      linkedAccountId: realUid,
+      businessId: businessId,
+    };
+
+    if (data.photoURL) {
+      bizProfileData.photoURL = data.photoURL;
+      bizProfileData.photoURLThumbnail = data.photoURL;
+    }
+
+    const docId = await firestoreService.create<UserProfile>('users', bizProfileData as any);
     return docId;
   },
 };

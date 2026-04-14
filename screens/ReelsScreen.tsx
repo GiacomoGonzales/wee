@@ -11,6 +11,7 @@ import {
   StatusBar,
   Platform,
   Image,
+  Animated,
 } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus, Audio } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -50,6 +51,10 @@ const ReelItem: React.FC<ReelItemProps> = React.memo(({ post, isActive, onBack, 
   const [isPaused, setIsPaused] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
   const [hasStartedPlaying, setHasStartedPlaying] = useState(false);
+  const [showTapIcon, setShowTapIcon] = useState(false);
+  const [tapIconType, setTapIconType] = useState<'pause' | 'play'>('pause');
+  const tapIconTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [progress, setProgress] = useState(0);
   const insets = useSafeAreaInsets();
 
   const { stats: voteStats, voteAgree, voteDisagree } = useVote({
@@ -80,23 +85,32 @@ const ReelItem: React.FC<ReelItemProps> = React.memo(({ post, isActive, onBack, 
 
   const handleTapVideo = useCallback(() => {
     if (!videoRef.current) return;
-    if (isPaused) {
-      videoRef.current.playAsync();
-      setIsPaused(false);
-    } else {
+    const willPause = !isPaused;
+    // Clear any pending hide timer
+    if (tapIconTimer.current) clearTimeout(tapIconTimer.current);
+    // Show the icon
+    setTapIconType(willPause ? 'pause' : 'play');
+    setShowTapIcon(true);
+    if (willPause) {
       videoRef.current.pauseAsync();
-      setIsPaused(true);
+      // Keep pause icon visible while paused
+    } else {
+      videoRef.current.playAsync();
+      // Hide play icon after a moment
+      tapIconTimer.current = setTimeout(() => setShowTapIcon(false), 600);
     }
+    setIsPaused(willPause);
   }, [isPaused]);
 
   const handlePlaybackStatus = useCallback((status: AVPlaybackStatus) => {
     if (status.isLoaded) {
       setIsBuffering(status.isBuffering);
-      // Mark as started once the video actually plays a frame
       if (status.isPlaying && !hasStartedPlaying) {
         setHasStartedPlaying(true);
       }
-      // Seek to initial position once when video first loads
+      if (status.durationMillis) {
+        setProgress(status.positionMillis / status.durationMillis);
+      }
       if (initialPositionMillis && !hasSeekedRef.current) {
         hasSeekedRef.current = true;
         videoRef.current?.setPositionAsync(initialPositionMillis).catch(() => {});
@@ -124,29 +138,21 @@ const ReelItem: React.FC<ReelItemProps> = React.memo(({ post, isActive, onBack, 
         <Video
           ref={videoRef}
           source={{ uri: post.videoUrl! }}
-          style={StyleSheet.absoluteFill}
+          style={{ width: '100%', height: '100%' }}
           resizeMode={ResizeMode.COVER}
           shouldPlay={isActive}
           isMuted={false}
           isLooping
-          progressUpdateIntervalMillis={500}
+          progressUpdateIntervalMillis={100}
           onPlaybackStatusUpdate={handlePlaybackStatus}
         />
+        {/* Play/Pause icon placeholder - moved outside */}
       </TouchableOpacity>
 
       {/* Spinner only when rebuffering mid-playback, not on initial load */}
       {isBuffering && isActive && hasStartedPlaying && (
-        <View style={styles.pauseOverlay} pointerEvents="none">
+        <View style={[styles.pauseOverlay, { zIndex: 10 }]} pointerEvents="none">
           <ActivityIndicator size="large" color="white" />
-        </View>
-      )}
-
-      {/* Pause icon overlay */}
-      {isPaused && !isBuffering && (
-        <View style={styles.pauseOverlay} pointerEvents="none">
-          <View style={styles.pauseIcon}>
-            <Ionicons name="play" size={scale(50)} color="white" />
-          </View>
         </View>
       )}
 
@@ -159,9 +165,16 @@ const ReelItem: React.FC<ReelItemProps> = React.memo(({ post, isActive, onBack, 
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={scale(26)} color="white" />
         </TouchableOpacity>
-        <Text style={styles.topTitle}>Reels</Text>
+        <Text style={styles.topTitle}>Weëls</Text>
         <View style={{ width: scale(26) }} />
       </LinearGradient>
+
+      {/* Progress bar */}
+      {hasStartedPlaying && (
+        <View style={styles.progressBar} pointerEvents="none">
+          <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+        </View>
+      )}
 
       {/* Bottom gradient + info */}
       <LinearGradient
@@ -181,7 +194,7 @@ const ReelItem: React.FC<ReelItemProps> = React.memo(({ post, isActive, onBack, 
                   avatarId={postAuthor.avatarId || 'male'}
                   photoURL={typeof postAuthor.photoURL === 'string' ? postAuthor.photoURL : undefined}
                   photoURLThumbnail={typeof postAuthor.photoURLThumbnail === 'string' ? postAuthor.photoURLThumbnail : undefined}
-                  backgroundColor="#8B5CF6"
+                  backgroundColor="#F5B731"
                   showBorder={false}
                 />
               )}
@@ -252,16 +265,30 @@ const ReelItem: React.FC<ReelItemProps> = React.memo(({ post, isActive, onBack, 
           </View>
         </View>
       </LinearGradient>
+
     </View>
   );
 });
 
 // ===================== ReelsScreen =====================
 
-const ReelsScreen: React.FC = () => {
+interface ReelsScreenProps {
+  initialPost?: Post;
+  initialVideoPosts?: Post[];
+  communitySlug?: string | null;
+  initialPositionMillis?: number;
+  onBack?: () => void;
+}
+
+const ReelsScreen: React.FC<ReelsScreenProps> = (props) => {
   const navigation = useNavigation();
   const route = useRoute<ReelsRouteProp>();
-  const { initialPost, initialVideoPosts, communitySlug, initialPositionMillis } = route.params;
+  const params = route.params || {};
+
+  const initialPost = props.initialPost || params.initialPost;
+  const initialVideoPosts = props.initialVideoPosts || params.initialVideoPosts || [];
+  const communitySlug = props.communitySlug || params.communitySlug;
+  const initialPositionMillis = props.initialPositionMillis || params.initialPositionMillis;
 
   const [videoPosts, setVideoPosts] = useState<Post[]>(initialVideoPosts);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -269,6 +296,39 @@ const ReelsScreen: React.FC = () => {
   const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const loadedIds = useRef(new Set<string>(initialVideoPosts.map(p => p.id!)));
+
+  // Swipe horizontal para volver al wall
+  const translateX = useRef(new Animated.Value(0)).current;
+  const swipeStartX = useRef(0);
+
+  const handleTouchStart = useCallback((e: any) => {
+    swipeStartX.current = e.nativeEvent.pageX;
+  }, []);
+
+  const handleTouchMove = useCallback((e: any) => {
+    const dx = e.nativeEvent.pageX - swipeStartX.current;
+    if (dx > 20) {
+      translateX.setValue(dx);
+    }
+  }, [translateX]);
+
+  const handleTouchEnd = useCallback((e: any) => {
+    const dx = e.nativeEvent.pageX - swipeStartX.current;
+    if (dx > SCREEN_WIDTH * 0.3) {
+      Animated.timing(translateX, {
+        toValue: SCREEN_WIDTH,
+        duration: 200,
+        useNativeDriver: true,
+      }).start(() => { if (props.onBack) props.onBack(); else navigation.goBack(); });
+    } else {
+      Animated.spring(translateX, {
+        toValue: 0,
+        tension: 100,
+        friction: 10,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [translateX, navigation]);
 
   // Calculate initial scroll index
   const initialIndex = useMemo(() => {
@@ -282,8 +342,9 @@ const ReelsScreen: React.FC = () => {
   }, [initialIndex]);
 
   const handleBack = useCallback(() => {
-    navigation.goBack();
-  }, [navigation]);
+    if (props.onBack) props.onBack();
+    else navigation.goBack();
+  }, [navigation, props.onBack]);
 
   const handleComment = useCallback((postId: string) => {
     const post = videoPosts.find(p => p.id === postId);
@@ -349,7 +410,12 @@ const ReelsScreen: React.FC = () => {
   const keyExtractor = useCallback((item: Post) => item.id!, []);
 
   return (
-    <View style={styles.container}>
+    <Animated.View
+      style={[styles.container, { transform: [{ translateX }] }]}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <FlatList
         data={videoPosts}
@@ -369,12 +435,12 @@ const ReelsScreen: React.FC = () => {
         ListFooterComponent={
           loadingMore ? (
             <View style={[styles.loadingFooter, { height: SCREEN_HEIGHT * 0.3 }]}>
-              <ActivityIndicator size="large" color="#8B5CF6" />
+              <ActivityIndicator size="large" color="#F5B731" />
             </View>
           ) : null
         }
       />
-    </View>
+    </Animated.View>
   );
 };
 
@@ -401,11 +467,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingLeft: scale(4),
   },
+  tapIconOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  tapIconCircle: {
+    width: scale(64),
+    height: scale(64),
+    borderRadius: scale(32),
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingLeft: scale(4),
+  },
   topGradient: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
+    zIndex: 5,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: scale(16),
@@ -422,11 +504,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: -0.3,
   },
+  progressBar: {
+    position: 'absolute',
+    bottom: scale(100),
+    left: scale(16),
+    right: scale(16),
+    height: 2,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 1,
+    zIndex: 6,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    borderRadius: 1,
+  },
   bottomGradient: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
+    zIndex: 5,
     paddingTop: scale(60),
     paddingHorizontal: scale(16),
   },

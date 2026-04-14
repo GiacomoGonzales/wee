@@ -17,17 +17,21 @@ service cloud.firestore {
       allow read: if true;
 
       // Solo el dueño puede crear/actualizar su perfil
-      // Permite crear perfil real (uid == auth.uid) o HIDI (uid == "hidi_" + auth.uid)
+      // Permite crear perfil real (uid == auth.uid), HIDI (uid == "hidi_" + auth.uid), o BIZ (uid starts with "biz_")
       allow create: if isAuthenticated() &&
         (request.auth.uid == request.resource.data.uid ||
          (request.resource.data.uid == ("hidi_" + request.auth.uid) &&
           request.resource.data.profileType == 'hidi' &&
+          request.resource.data.linkedAccountId == request.auth.uid) ||
+         (request.resource.data.profileType == 'biz' &&
           request.resource.data.linkedAccountId == request.auth.uid));
 
       allow update: if isAuthenticated() &&
         (request.auth.uid == resource.data.uid ||
          (resource.data.uid == ("hidi_" + request.auth.uid) &&
           resource.data.profileType == 'hidi') ||
+         (resource.data.profileType == 'biz' &&
+          resource.data.linkedAccountId == request.auth.uid) ||
          // Permitir actualizar solo contadores de follows
          request.resource.data.diff(resource.data).affectedKeys()
            .hasOnly(['followers', 'following']));
@@ -65,21 +69,32 @@ service cloud.firestore {
       }
     }
 
+    // Helper: verifica si un userId pertenece al usuario autenticado (real, hidi o biz)
+    function isOwnIdentity(userId) {
+      return userId == request.auth.uid ||
+        userId == ("hidi_" + request.auth.uid) ||
+        (userId.matches('biz_.*') &&
+         exists(/databases/$(database)/documents/users/$(userId)) == false ||
+         get(/databases/$(database)/documents/users/$(userId)).data.linkedAccountId == request.auth.uid);
+    }
+
     // === POSTS ===
     match /posts/{postId} {
       // Cualquiera puede leer posts públicos
       allow read: if true;
 
       // Solo usuarios autenticados pueden crear posts
-      // Permite crear con uid real o HIDI ("hidi_" + auth.uid)
+      // Permite crear con uid real, HIDI o BIZ
       allow create: if isAuthenticated() &&
         (request.resource.data.userId == request.auth.uid ||
-         request.resource.data.userId == ("hidi_" + request.auth.uid));
+         request.resource.data.userId == ("hidi_" + request.auth.uid) ||
+         (request.resource.data.userId.matches('biz_.*')));
 
       // El autor puede actualizar su post, o cualquier usuario autenticado puede actualizar contadores
       allow update: if isAuthenticated() && (
         resource.data.userId == request.auth.uid ||
         resource.data.userId == ("hidi_" + request.auth.uid) ||
+        resource.data.userId.matches('biz_.*') ||
         // Permitir actualizar solo contadores (views, agreementCount, etc.)
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['views', 'agreementCount', 'disagreementCount', 'likes', 'comments', 'shares', 'reposts', 'updatedAt'])
@@ -88,23 +103,26 @@ service cloud.firestore {
       // Solo el autor puede eliminar su post
       allow delete: if isAuthenticated() &&
         (resource.data.userId == request.auth.uid ||
-         resource.data.userId == ("hidi_" + request.auth.uid));
+         resource.data.userId == ("hidi_" + request.auth.uid) ||
+         resource.data.userId.matches('biz_.*'));
     }
 
     // === VOTOS ===
     match /votes/{voteId} {
       allow read: if true;
 
-      // Solo el votante puede crear/modificar/eliminar su voto (real o HIDI)
       allow create: if isAuthenticated() &&
         (request.resource.data.userId == request.auth.uid ||
-         request.resource.data.userId == ("hidi_" + request.auth.uid));
+         request.resource.data.userId == ("hidi_" + request.auth.uid) ||
+         request.resource.data.userId.matches('biz_.*'));
       allow update: if isAuthenticated() &&
         (resource.data.userId == request.auth.uid ||
-         resource.data.userId == ("hidi_" + request.auth.uid));
+         resource.data.userId == ("hidi_" + request.auth.uid) ||
+         resource.data.userId.matches('biz_.*'));
       allow delete: if isAuthenticated() &&
         (resource.data.userId == request.auth.uid ||
-         resource.data.userId == ("hidi_" + request.auth.uid));
+         resource.data.userId == ("hidi_" + request.auth.uid) ||
+         resource.data.userId.matches('biz_.*'));
     }
 
     // === VOTOS DE COMENTARIOS ===
@@ -112,13 +130,16 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isAuthenticated() &&
         (request.resource.data.userId == request.auth.uid ||
-         request.resource.data.userId == ("hidi_" + request.auth.uid));
+         request.resource.data.userId == ("hidi_" + request.auth.uid) ||
+         request.resource.data.userId.matches('biz_.*'));
       allow update: if isAuthenticated() &&
         (resource.data.userId == request.auth.uid ||
-         resource.data.userId == ("hidi_" + request.auth.uid));
+         resource.data.userId == ("hidi_" + request.auth.uid) ||
+         resource.data.userId.matches('biz_.*'));
       allow delete: if isAuthenticated() &&
         (resource.data.userId == request.auth.uid ||
-         resource.data.userId == ("hidi_" + request.auth.uid));
+         resource.data.userId == ("hidi_" + request.auth.uid) ||
+         resource.data.userId.matches('biz_.*'));
     }
 
     // === COMENTARIOS ===
@@ -127,11 +148,13 @@ service cloud.firestore {
 
       allow create: if isAuthenticated() &&
         (request.resource.data.userId == request.auth.uid ||
-         request.resource.data.userId == ("hidi_" + request.auth.uid));
+         request.resource.data.userId == ("hidi_" + request.auth.uid) ||
+         request.resource.data.userId.matches('biz_.*'));
 
       allow update: if isAuthenticated() && (
         resource.data.userId == request.auth.uid ||
         resource.data.userId == ("hidi_" + request.auth.uid) ||
+        resource.data.userId.matches('biz_.*') ||
         // Permitir actualizar contadores
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['likes', 'agreementCount', 'disagreementCount'])
@@ -139,7 +162,8 @@ service cloud.firestore {
 
       allow delete: if isAuthenticated() &&
         (resource.data.userId == request.auth.uid ||
-         resource.data.userId == ("hidi_" + request.auth.uid));
+         resource.data.userId == ("hidi_" + request.auth.uid) ||
+         resource.data.userId.matches('biz_.*'));
     }
 
     // === LIKES (legacy, mantener para retrocompatibilidad) ===
@@ -158,22 +182,19 @@ service cloud.firestore {
 
     // === CONVERSACIONES ===
     match /conversations/{conversationId} {
-      // Solo participantes pueden leer/escribir (real o HIDI)
+      // Solo participantes pueden leer/escribir (real, HIDI o BIZ)
       allow read: if isAuthenticated() &&
         (request.auth.uid in resource.data.participants ||
-         ("hidi_" + request.auth.uid) in resource.data.participants);
+         ("hidi_" + request.auth.uid) in resource.data.participants ||
+         resource.data.participants.hasAny([request.auth.uid]));
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated() &&
-        (request.auth.uid in resource.data.participants ||
-         ("hidi_" + request.auth.uid) in resource.data.participants);
+      allow update: if isAuthenticated();
       allow delete: if false;
 
       // Mensajes dentro de conversaciones
       match /messages/{messageId} {
         allow read: if isAuthenticated();
-        allow create: if isAuthenticated() &&
-          (request.resource.data.senderId == request.auth.uid ||
-           request.resource.data.senderId == ("hidi_" + request.auth.uid));
+        allow create: if isAuthenticated();
         allow update: if isAuthenticated();
         allow delete: if false;
       }
@@ -186,12 +207,82 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
+    // === BUSINESS FOLLOWS (WeeBiz) ===
+    match /businessFollows/{followId} {
+      allow read: if true;
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid;
+    }
+
+    // === BUSINESSES (WeeBiz) ===
+    match /businesses/{businessId} {
+      // Cualquiera puede leer negocios
+      allow read: if true;
+
+      // Solo usuarios autenticados pueden crear un negocio
+      allow create: if isAuthenticated() &&
+        request.resource.data.ownerId == request.auth.uid;
+
+      // Solo el dueño puede actualizar su negocio, o cualquiera puede actualizar contadores
+      allow update: if isAuthenticated() && (
+        resource.data.ownerId == request.auth.uid ||
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['followersCount', 'auraScore', 'reviewCount'])
+      );
+
+      allow delete: if false;
+
+      // Reseñas del negocio
+      match /reviews/{reviewId} {
+        allow read: if true;
+
+        // Solo usuarios autenticados pueden crear una reseña (no el dueño a sí mismo)
+        allow create: if isAuthenticated() &&
+          request.resource.data.userId == request.auth.uid;
+
+        // Solo el autor puede eliminar su reseña
+        allow delete: if isAuthenticated() &&
+          resource.data.userId == request.auth.uid;
+
+        allow update: if false;
+      }
+
+      // Productos del negocio
+      match /products/{productId} {
+        allow read: if true;
+
+        // Solo el dueño del negocio puede crear/editar/eliminar productos
+        allow create: if isAuthenticated() &&
+          get(/databases/$(database)/documents/businesses/$(businessId)).data.ownerId == request.auth.uid;
+        allow update: if isAuthenticated() &&
+          get(/databases/$(database)/documents/businesses/$(businessId)).data.ownerId == request.auth.uid;
+        allow delete: if isAuthenticated() &&
+          get(/databases/$(database)/documents/businesses/$(businessId)).data.ownerId == request.auth.uid;
+      }
+    }
+
+    // === WALLETS ===
+    match /wallets/{walletId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+    }
+
+    // === TRANSACTIONS ===
+    match /transactions/{transactionId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+    }
+
     // === NOTIFICACIONES ===
     match /notifications/{notificationId} {
-      // Solo el destinatario puede leer sus notificaciones (real o HIDI)
+      // Solo el destinatario puede leer sus notificaciones (real, HIDI o BIZ)
       allow read: if isAuthenticated() &&
         (resource.data.recipientId == request.auth.uid ||
-         resource.data.recipientId == ("hidi_" + request.auth.uid));
+         resource.data.recipientId == ("hidi_" + request.auth.uid) ||
+         resource.data.recipientId.matches('biz_.*'));
 
       // Usuarios autenticados pueden crear notificaciones
       allow create: if isAuthenticated();
@@ -199,12 +290,14 @@ service cloud.firestore {
       // Solo el destinatario puede actualizar (marcar como leída)
       allow update: if isAuthenticated() &&
         (resource.data.recipientId == request.auth.uid ||
-         resource.data.recipientId == ("hidi_" + request.auth.uid));
+         resource.data.recipientId == ("hidi_" + request.auth.uid) ||
+         resource.data.recipientId.matches('biz_.*'));
 
       // Solo el destinatario puede eliminar sus notificaciones
       allow delete: if isAuthenticated() &&
         (resource.data.recipientId == request.auth.uid ||
-         resource.data.recipientId == ("hidi_" + request.auth.uid));
+         resource.data.recipientId == ("hidi_" + request.auth.uid) ||
+         resource.data.recipientId.matches('biz_.*'));
     }
   }
 }

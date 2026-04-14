@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  InteractionManager,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -47,7 +48,7 @@ const getNotificationIcon = (type: NotificationType): { name: string; color: str
     case 'comment':
       return { name: 'chatbubble', color: '#3B82F6' };
     case 'follow':
-      return { name: 'person-add', color: '#8B5CF6' };
+      return { name: 'person-add', color: '#F5B731' };
     case 'repost':
       return { name: 'repeat', color: '#10B981' };
     case 'mention':
@@ -85,7 +86,7 @@ const getNotificationMessage = (notification: Notification): string => {
 
 const NotificationsScreen: React.FC = () => {
   const { theme } = useTheme();
-  const { user } = useAuth();
+  const { user, registerCleanup } = useAuth();
   const { userProfile } = useUserProfile();
   const { isDesktop } = useResponsive();
 
@@ -99,31 +100,36 @@ const NotificationsScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
-  // Suscripción en tiempo real a notificaciones del perfil activo
+  // Suscripción en tiempo real — espera a que la transición termine
   useEffect(() => {
     if (!activeUid) {
       setLoading(false);
       return;
     }
 
-    console.log('🔔 Suscribiendo a notificaciones para:', activeUid);
+    let unsubscribe: (() => void) | undefined;
+    let deregister: (() => void) | undefined;
 
-    const unsubscribe = notificationService.subscribeToNotifications(
-      activeUid,
-      (newNotifications) => {
-        console.log('🔔 Notificaciones recibidas:', newNotifications.length);
-        setNotifications(newNotifications);
-        setLoading(false);
-        setRefreshing(false);
-      },
-      50
-    );
+    // Esperar a que la animación de navegación termine antes de hacer la query
+    const task = InteractionManager.runAfterInteractions(() => {
+      unsubscribe = notificationService.subscribeToNotifications(
+        activeUid,
+        (newNotifications) => {
+          setNotifications(newNotifications);
+          setLoading(false);
+          setRefreshing(false);
+        },
+        50
+      );
+      deregister = registerCleanup(() => unsubscribe?.());
+    });
 
     return () => {
-      console.log('🔔 Desuscribiendo de notificaciones');
-      unsubscribe();
+      task.cancel();
+      deregister?.();
+      unsubscribe?.();
     };
-  }, [activeUid]);
+  }, [activeUid, registerCleanup]);
 
   const handleNotificationsPress = () => {
     navigation.goBack();

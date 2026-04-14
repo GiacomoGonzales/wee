@@ -1,4 +1,4 @@
-// Sistema de diseño moderno y minimalista para HideTok
+// Sistema de diseño moderno y minimalista para Weë
 import { scale } from '../utils/scale';
 
 export const SPACING = {

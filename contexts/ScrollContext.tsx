@@ -7,6 +7,8 @@ interface ScrollContextType {
   setIsScrollingDown: (isDown: boolean) => void;
   scrollToTopTrigger: number;
   triggerScrollToTop: () => void;
+  refreshTrigger: number;
+  triggerRefresh: () => void;
 }
 
 const ScrollContext = createContext<ScrollContextType | undefined>(undefined);
@@ -15,9 +17,14 @@ export const ScrollProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [scrollY, setScrollY] = useState(0);
   const [isScrollingDown, setIsScrollingDown] = useState(false);
   const [scrollToTopTrigger, setScrollToTopTrigger] = useState(0);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const triggerScrollToTop = useCallback(() => {
     setScrollToTopTrigger(prev => prev + 1);
+  }, []);
+
+  const triggerRefresh = useCallback(() => {
+    setRefreshTrigger(prev => prev + 1);
   }, []);
 
   return (
@@ -28,6 +35,8 @@ export const ScrollProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       setIsScrollingDown,
       scrollToTopTrigger,
       triggerScrollToTop,
+      refreshTrigger,
+      triggerRefresh,
     }}>
       {children}
     </ScrollContext.Provider>

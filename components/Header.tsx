@@ -15,19 +15,26 @@ import { scale } from '../utils/scale';
 interface HeaderProps {
   onNotificationsPress?: () => void;
   onMenuPress?: () => void;
+  onBackPress?: () => void;
   transparent?: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ onNotificationsPress, onMenuPress, transparent }) => {
+const Header: React.FC<HeaderProps> = ({ onNotificationsPress, onMenuPress, onBackPress, transparent }) => {
   const { theme, setThemeMode } = useTheme();
   const { user } = useAuth();
-  const { hasHidiProfile, activeProfileType, switchIdentity } = useUserProfile();
+  const { hasHidiProfile, hasBizProfile, activeProfileType, switchIdentity, switchToBiz } = useUserProfile();
 
   const handleSwitchIdentity = () => {
-    switchIdentity();
-    // Cambiar tema: HIDI = oscuro, Real = claro
-    const nextType = activeProfileType === 'real' ? 'hidi' : 'real';
-    setThemeMode(nextType === 'hidi' ? 'dark' : 'light');
+    if (activeProfileType === 'biz') {
+      // Biz -> Real
+      switchToBiz();
+      setThemeMode('light');
+    } else {
+      // Real <-> Hidi
+      switchIdentity();
+      const nextType = activeProfileType === 'real' ? 'hidi' : 'real';
+      setThemeMode(nextType === 'hidi' ? 'dark' : 'light');
+    }
   };
   const { triggerScrollToTop } = useScroll();
   const insets = useSafeAreaInsets();
@@ -52,10 +59,19 @@ const Header: React.FC<HeaderProps> = ({ onNotificationsPress, onMenuPress, tran
   }, [user]);
 
   const handleLogoPress = () => {
-    // Trigger scroll to top
     triggerScrollToTop();
-    // Also navigate to Home in case we're not there
-    navigation.navigate('Home' as never);
+    // Navigate to Home tab → Landing screen (root)
+    try {
+      // Try to go to the tab first
+      const tabNav = navigation.getParent();
+      if (tabNav) {
+        (tabNav as any).navigate('Home', { screen: 'Landing' });
+      } else {
+        navigation.navigate('Home' as never);
+      }
+    } catch {
+      navigation.navigate('Home' as never);
+    }
   };
 
   const handleLoginPress = () => {
@@ -83,51 +99,58 @@ const Header: React.FC<HeaderProps> = ({ onNotificationsPress, onMenuPress, tran
       }]}>
         <View style={styles.content}>
           <View style={styles.leftSection}>
-            {/* Hamburger menu */}
-            {onMenuPress && (
-              <TouchableOpacity onPress={onMenuPress} activeOpacity={0.7} style={styles.menuButton}>
-                <Ionicons name="menu-outline" size={ICON_SIZE.lg} color={textColor} />
+            {/* Back or hamburger menu */}
+            {onBackPress ? (
+              <TouchableOpacity onPress={onBackPress} activeOpacity={0.7} style={styles.menuButton}>
+                <Ionicons name="arrow-back" size={scale(23)} color={textColor} />
               </TouchableOpacity>
-            )}
+            ) : onMenuPress ? (
+              <TouchableOpacity onPress={onMenuPress} activeOpacity={0.7} style={styles.menuButton}>
+                <Ionicons name="menu-outline" size={scale(23)} color={textColor} />
+              </TouchableOpacity>
+            ) : null}
 
             {/* Logo */}
             <TouchableOpacity onPress={handleLogoPress} activeOpacity={0.7} style={styles.logoContainer}>
             <Image
-              source={require('../assets/logo.png')}
-              style={styles.logo}
+              source={(transparent || activeProfileType === 'hidi') ? require('../assets/images/weelogo-dark.png') : require('../assets/images/weelogo.png')}
+              style={styles.weeLogo}
               contentFit="contain"
               priority="high"
               cachePolicy="memory-disk"
             />
-            <Text style={[styles.logoText, { color: textColor }]}>HideTok</Text>
           </TouchableOpacity>
           </View>
 
           {/* Actions */}
           <View style={styles.actions}>
-            {/* Switch Identity Button - solo visible si tiene perfil HIDI */}
-            {user && hasHidiProfile && (
+            {/* Switch Identity Button - visible si tiene perfil HIDI o está en modo BIZ */}
+            {user && (hasHidiProfile || activeProfileType === 'biz') && (
               <TouchableOpacity
                 style={[styles.switchButton, {
                   backgroundColor: transparent
                     ? 'rgba(255,255,255,0.15)'
-                    : (activeProfileType === 'hidi' ? theme.colors.accent + '20' : theme.colors.surface),
+                    : activeProfileType === 'biz'
+                      ? '#7C3AED' + '20'
+                      : (activeProfileType === 'hidi' ? theme.colors.accent + '20' : theme.colors.surface),
                   borderColor: transparent
                     ? 'rgba(255,255,255,0.3)'
-                    : (activeProfileType === 'hidi' ? theme.colors.accent : theme.colors.border),
+                    : activeProfileType === 'biz'
+                      ? '#7C3AED'
+                      : (activeProfileType === 'hidi' ? theme.colors.accent : theme.colors.border),
                 }]}
                 onPress={handleSwitchIdentity}
                 activeOpacity={0.7}
               >
                 <Ionicons
-                  name={activeProfileType === 'hidi' ? 'eye-off' : 'eye'}
+                  name={activeProfileType === 'biz' ? 'storefront' : (activeProfileType === 'hidi' ? 'eye-off' : 'eye')}
                   size={ICON_SIZE.md}
-                  color={transparent ? 'white' : (activeProfileType === 'hidi' ? theme.colors.accent : textColor)}
+                  color={transparent ? 'white' : (activeProfileType === 'biz' ? '#7C3AED' : activeProfileType === 'hidi' ? theme.colors.accent : textColor)}
                 />
                 <Text style={[styles.switchButtonText, {
-                  color: transparent ? 'white' : (activeProfileType === 'hidi' ? theme.colors.accent : textColor),
+                  color: transparent ? 'white' : (activeProfileType === 'biz' ? '#7C3AED' : activeProfileType === 'hidi' ? theme.colors.accent : textColor),
                 }]}>
-                  {activeProfileType === 'hidi' ? 'HIDI' : 'Real'}
+                  {activeProfileType === 'biz' ? 'Biz' : activeProfileType === 'hidi' ? 'Weë' : 'Real'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -185,10 +208,11 @@ const styles = StyleSheet.create({
   leftSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
+    gap: scale(0),
   },
   menuButton: {
     padding: SPACING.xs,
+    marginRight: scale(2),
   },
   logoContainer: {
     flexDirection: 'row',
@@ -198,6 +222,10 @@ const styles = StyleSheet.create({
   logo: {
     height: scale(32),
     width: scale(32),
+  },
+  weeLogo: {
+    height: scale(36),
+    width: scale(101),
   },
   logoText: {
     fontSize: FONT_SIZE.xl,

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { Platform } from 'react-native';
 import {
   User,
@@ -25,7 +25,7 @@ if (Platform.OS !== 'web') {
 
     // Configurar Google Sign-In
     GoogleSignin.configure({
-      webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+      webClientId: '546769059837-uradjj25om3cgb06h8tvsfu64k0rab3i.apps.googleusercontent.com',
       offlineAccess: true,
     });
   } catch (e) {
@@ -37,6 +37,7 @@ if (Platform.OS !== 'web') {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  loggingOut: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, displayName?: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -44,6 +45,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updateUserProfile: (displayName: string, photoURL?: string) => Promise<void>;
+  registerCleanup: (cleanup: () => void) => () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -63,7 +65,17 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [initializing, setInitializing] = useState(true);
+  const cleanupFunctions = useRef<Set<() => void>>(new Set());
+
+  // Permite que otros contexts/screens registren funciones de limpieza para logout
+  const registerCleanup = useCallback((cleanup: () => void) => {
+    cleanupFunctions.current.add(cleanup);
+    return () => {
+      cleanupFunctions.current.delete(cleanup);
+    };
+  }, []);
 
   useEffect(() => {
     // Verificar si hay una sesión guardada en localStorage
@@ -122,12 +134,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = async (): Promise<void> => {
     console.log('🟢 AuthContext: logout function called');
     try {
+      setLoggingOut(true);
+
+      // Ejecutar todas las funciones de limpieza registradas ANTES del signOut
+      // Esto desuscribe listeners de Firebase antes de perder permisos
+      console.log('🟢 AuthContext: Running cleanup functions...');
+      cleanupFunctions.current.forEach((cleanup) => {
+        try {
+          cleanup();
+        } catch (e) {
+          console.warn('Cleanup error (ignored):', e);
+        }
+      });
+      cleanupFunctions.current.clear();
+
       console.log('🟢 AuthContext: Calling Firebase signOut...');
       await signOut(auth);
       console.log('🟢 AuthContext: Firebase signOut completed successfully');
     } catch (error) {
       console.error('🟢 AuthContext: Error during logout:', error);
       throw error;
+    } finally {
+      setLoggingOut(false);
     }
   };
 
@@ -217,13 +245,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const value: AuthContextType = {
     user,
     loading,
+    loggingOut,
     signIn,
     signUp,
     signInWithGoogle,
     signInAnonymously: signInAnonymouslyHandler,
     logout,
     resetPassword,
-    updateUserProfile
+    updateUserProfile,
+    registerCleanup,
   };
 
   return (

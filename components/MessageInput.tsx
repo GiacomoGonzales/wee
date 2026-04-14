@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, TextInput, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, TextInput, TouchableOpacity, StyleSheet, Platform, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../contexts/ThemeContext';
@@ -21,6 +21,13 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const [message, setMessage] = useState('');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
 
   const handleSend = () => {
     if (message.trim() && !disabled) {
@@ -35,7 +42,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
         styles.container,
         {
           backgroundColor: theme.colors.background,
-          paddingBottom: Platform.OS === 'ios' ? SPACING.sm : SPACING.md,
+          paddingBottom: keyboardVisible
+            ? (Platform.OS === 'ios' ? SPACING.sm : SPACING.md)
+            : (Platform.OS === 'ios' ? SPACING.sm + 100 : SPACING.md + 80),
         },
       ]}
     >

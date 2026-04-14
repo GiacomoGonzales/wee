@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useNavigationState } from '@react-navigation/native';
 import * as Notifications from 'expo-notifications';
 import { pushNotificationService, PushNotificationData } from '../services/pushNotificationService';
 import { useAuth } from './AuthContext';
@@ -66,13 +66,9 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
       }
     );
 
-    // Verificar si la app fue abierta por una notificación
-    pushNotificationService.getLastNotificationResponse().then((response) => {
-      if (response) {
-        const data = response.notification.request.content.data as PushNotificationData;
-        handleNotificationNavigation(data);
-      }
-    });
+    // No verificar getLastNotificationResponse al montar — causa navegación
+    // no deseada al Inbox cada vez que la app se reabre. Las notificaciones
+    // tocadas se manejan a través del responseListener en tiempo real.
 
     return () => {
       if (notificationListener.current) {
@@ -87,6 +83,13 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
   // Navegar según el tipo de notificación
   const handleNotificationNavigation = (data: PushNotificationData) => {
     if (!data) return;
+
+    // Esperar a que el navigator esté listo antes de navegar
+    if (!navigation.isReady?.()) {
+      // Reintentar después de que el navigator se monte
+      setTimeout(() => handleNotificationNavigation(data), 500);
+      return;
+    }
 
     try {
       switch (data.type) {
@@ -110,8 +113,8 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
           }
           break;
         default:
-          // Ir a la pantalla de notificaciones
-          navigation.navigate('Main', { screen: 'Inbox' });
+          // Tipo desconocido — no navegar a ningún lado
+          break;
       }
     } catch (error) {
       console.error('Error navegando desde notificación:', error);

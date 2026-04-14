@@ -60,7 +60,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
         ]}
       >
         <Image
-          source={require('../assets/icon.png')}
+          source={require('../assets/images/weelogo-vertical.png')}
           style={styles.logo}
           contentFit="contain"
           transition={300}

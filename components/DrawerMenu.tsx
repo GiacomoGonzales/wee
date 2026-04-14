@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Animated,
   Dimensions,
   Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,6 +19,7 @@ import { useUserProfile } from '../contexts/UserProfileContext';
 import AvatarDisplay from './avatars/AvatarDisplay';
 import { SPACING, FONT_SIZE, FONT_WEIGHT, ICON_SIZE, BORDER_RADIUS } from '../constants/design';
 import { scale } from '../utils/scale';
+import { weeBizService, Business } from '../services/weeBizService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DRAWER_WIDTH = SCREEN_WIDTH * 0.667;
@@ -32,17 +34,50 @@ interface MenuItem {
   icon: string;
   action: () => void;
   separator?: boolean;
+  logoUrl?: string;
 }
 
 const DrawerMenu: React.FC<DrawerMenuProps> = ({ visible, onClose }) => {
   const { theme, setThemeMode } = useTheme();
   const { user, logout } = useAuth();
-  const { userProfile, activeProfileType, hasHidiProfile, switchIdentity } = useUserProfile();
+  const { userProfile, activeProfileType, hasHidiProfile, hasBizProfile, switchIdentity, switchToBiz, setBizProfile } = useUserProfile();
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
 
+  const [myBusiness, setMyBusiness] = useState<Business | null>(null);
+
   const translateX = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
+
+  // Check if user has a business (always use real uid, not hidi/biz uid)
+  const realUid = user?.uid;
+  useEffect(() => {
+    if (!realUid) return;
+    const loadBiz = async () => {
+      try {
+        const biz = await weeBizService.getBusinessByOwner(realUid);
+        setMyBusiness(biz);
+        // Auto-create biz user profile if business exists but no biz profile yet
+        if (biz?.id && !hasBizProfile) {
+          const { usersService } = require('../services/firestoreService');
+          let bizUserProfile = await usersService.getBizProfile(biz.id);
+          if (!bizUserProfile) {
+            await usersService.createBizProfile(realUid, biz.id, {
+              displayName: biz.name,
+              photoURL: biz.logo,
+            });
+            bizUserProfile = await usersService.getBizProfile(biz.id);
+          }
+          if (bizUserProfile) {
+            setBizProfile(bizUserProfile);
+          }
+        }
+      } catch (e) {
+        console.error('Error loading business:', e);
+      }
+    };
+    loadBiz();
+  }, [realUid, hasBizProfile]);
 
   useEffect(() => {
     if (visible) {
@@ -130,14 +165,42 @@ const DrawerMenu: React.FC<DrawerMenuProps> = ({ visible, onClose }) => {
   };
 
   const menuItems: MenuItem[] = [
-    { label: 'Perfil / Hidi', icon: 'person-outline', action: () => handleNavigate('Profile') },
-    { label: 'Créditos', icon: 'wallet-outline', action: showComingSoon },
-    { label: 'Recarga', icon: 'card-outline', action: showComingSoon },
-    { label: 'Destacado', icon: 'star-outline', action: showComingSoon },
-    { label: 'Mensajes', icon: 'chatbubble-outline', action: () => handleNavigate('Inbox') },
+    ...(hasHidiProfile ? [{
+      label: activeProfileType === 'hidi' ? 'Cambiar a Real' : 'Cambiar a Weë',
+      icon: 'swap-horizontal',
+      action: () => {
+        switchIdentity();
+        const nextType = activeProfileType === 'real' ? 'hidi' : 'real';
+        setThemeMode(nextType === 'hidi' ? 'dark' : 'light');
+      },
+    }] : []),
     { label: 'Contactos', icon: 'people-outline', action: showComingSoon },
     { label: 'Comunidades', icon: 'globe-outline', action: handleExploreCommunities },
-    { label: 'Páginas biz', icon: 'business-outline', action: showComingSoon },
+    { label: 'WeëTalk', icon: 'chatbubble-outline', action: () => handleNavigate('Inbox') },
+    { label: 'Créditos', icon: 'wallet-outline', action: () => handleNavigate('Wallet') },
+    { label: 'Reweërds', icon: 'gift-outline', action: showComingSoon },
+    { label: 'Weë Biz', icon: 'business-outline', action: () => {
+      closeDrawer();
+      setTimeout(() => navigation.navigate('WeeBiz' as never), 220);
+    } },
+    ...(activeProfileType === 'biz' ? [{
+      label: 'Volver a mi perfil',
+      icon: 'person-outline',
+      action: () => {
+        switchToBiz();
+        setThemeMode('light');
+      },
+    }] : []),
+    ...(myBusiness && activeProfileType !== 'biz' ? [{
+      label: myBusiness.name,
+      icon: 'storefront-outline',
+      logoUrl: myBusiness.logo || undefined,
+      action: () => {
+        switchToBiz();
+        setThemeMode('biz');
+        closeDrawer();
+      },
+    }] : []),
     { label: 'Términos y condiciones', icon: 'document-text-outline', action: showComingSoon, separator: true },
     { label: 'Cerrar sesión', icon: 'log-out-outline', action: handleLogout },
   ];
@@ -163,43 +226,33 @@ const DrawerMenu: React.FC<DrawerMenuProps> = ({ visible, onClose }) => {
         ]}
       >
         <View style={[styles.drawerContent, { paddingTop: insets.top + SPACING.lg }]}>
-          {/* User header - tap to switch identity */}
+          {/* User header - tap to go to profile */}
           <TouchableOpacity
             style={[styles.userHeader, { borderBottomColor: theme.colors.border }]}
-            activeOpacity={hasHidiProfile ? 0.7 : 1}
             onPress={() => {
-              if (!hasHidiProfile) return;
-              switchIdentity();
-              const nextType = activeProfileType === 'real' ? 'hidi' : 'real';
-              setThemeMode(nextType === 'hidi' ? 'dark' : 'light');
+              closeDrawer();
+              setTimeout(() => navigation.navigate('Profile' as never), 250);
             }}
+            activeOpacity={0.7}
           >
-            <AvatarDisplay
-              size={scale(56)}
-              avatarType={userProfile?.avatarType || 'predefined'}
-              avatarId={userProfile?.avatarId || 'male'}
-              photoURL={typeof userProfile?.photoURL === 'string' ? userProfile.photoURL : undefined}
-              photoURLThumbnail={typeof userProfile?.photoURLThumbnail === 'string' ? userProfile.photoURLThumbnail : undefined}
-              backgroundColor="#8B5CF6"
-            />
+            {user ? (
+              <AvatarDisplay
+                size={scale(56)}
+                avatarType={userProfile?.avatarType || 'predefined'}
+                avatarId={userProfile?.avatarId || 'male'}
+                photoURL={typeof userProfile?.photoURL === 'string' ? userProfile.photoURL : undefined}
+                photoURLThumbnail={typeof userProfile?.photoURLThumbnail === 'string' ? userProfile.photoURLThumbnail : undefined}
+                backgroundColor="#F5B731"
+              />
+            ) : (
+              <View style={{ width: scale(56), height: scale(56), borderRadius: scale(28), backgroundColor: '#E5E7EB', justifyContent: 'center', alignItems: 'center' }}>
+                <Ionicons name="person-circle-outline" size={scale(40)} color="#9CA3AF" />
+              </View>
+            )}
             <View style={styles.userInfo}>
               <Text style={[styles.userName, { color: theme.colors.text }]} numberOfLines={1}>
                 {userProfile?.displayName || user?.displayName || 'Usuario'}
               </Text>
-              <View style={styles.profileBadgeRow}>
-                <View style={[styles.profileBadge, {
-                  backgroundColor: activeProfileType === 'hidi' ? theme.colors.accent + '20' : theme.colors.surface,
-                }]}>
-                  <Text style={[styles.profileBadgeText, {
-                    color: activeProfileType === 'hidi' ? theme.colors.accent : theme.colors.textSecondary,
-                  }]}>
-                    {activeProfileType === 'hidi' ? 'HIDI' : 'Real'}
-                  </Text>
-                </View>
-                {hasHidiProfile && (
-                  <Ionicons name="swap-horizontal" size={scale(14)} color={theme.colors.textSecondary} />
-                )}
-              </View>
             </View>
           </TouchableOpacity>
 
@@ -213,11 +266,18 @@ const DrawerMenu: React.FC<DrawerMenuProps> = ({ visible, onClose }) => {
                   onPress={item.action}
                   activeOpacity={0.7}
                 >
-                  <Ionicons
-                    name={item.icon as any}
-                    size={ICON_SIZE.lg}
-                    color={item.label === 'Cerrar sesión' ? theme.colors.error : (activeProfileType === 'hidi' ? '#22C55E' : theme.colors.text)}
-                  />
+                  {item.logoUrl ? (
+                    <Image
+                      source={{ uri: item.logoUrl }}
+                      style={{ width: ICON_SIZE.lg, height: ICON_SIZE.lg, borderRadius: ICON_SIZE.lg / 2 }}
+                    />
+                  ) : (
+                    <Ionicons
+                      name={item.icon as any}
+                      size={ICON_SIZE.lg}
+                      color={item.label === 'Cerrar sesión' ? theme.colors.error : (activeProfileType === 'biz' ? '#7C3AED' : activeProfileType === 'hidi' ? '#22C55E' : '#F5B731')}
+                    />
+                  )}
                   <Text style={[
                     styles.menuItemText,
                     { color: item.label === 'Cerrar sesión' ? theme.colors.error : theme.colors.text },

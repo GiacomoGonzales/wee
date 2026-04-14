@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
-import { Appearance, ColorSchemeName, Animated, StyleSheet, View } from 'react-native';
+import { Appearance, ColorSchemeName, Animated, StyleSheet, View, Platform, StatusBar } from 'react-native';
+import * as NavigationBar from 'expo-navigation-bar';
 
-export type ThemeMode = 'system' | 'light' | 'dark';
+export type ThemeMode = 'system' | 'light' | 'dark' | 'biz';
 
 export interface Theme {
   dark: boolean;
@@ -26,19 +27,19 @@ export interface Theme {
 const lightTheme: Theme = {
   dark: false,
   colors: {
-    primary: '#8B5CF6',
+    primary: '#F5B731',
     background: '#FFFFFF',
     surface: '#F8F9FA',
     card: '#FFFFFF',
     text: '#1F2937',
     textSecondary: '#6B7280',
     border: '#E5E7EB',
-    accent: '#8B5CF6',
-    accentLight: '#A78BFA',
-    accentDark: '#7C3AED',
+    accent: '#F5B731',
+    accentLight: '#FFC94D',
+    accentDark: '#E5A020',
     like: '#EF4444',
     error: '#EF4444',
-    glow: 'rgba(139, 92, 246, 0.15)',
+    glow: 'rgba(245, 183, 49, 0.15)',
     backdrop: 'rgba(0, 0, 0, 0.4)',
   },
 };
@@ -46,20 +47,40 @@ const lightTheme: Theme = {
 const darkTheme: Theme = {
   dark: true,
   colors: {
-    primary: '#8B5CF6',
+    primary: '#F5B731',
     background: '#0A0A0A',
     surface: '#1C1C1E',
     card: '#111111',
     text: '#FFFFFF',
     textSecondary: '#98989D',
     border: '#38383A',
-    accent: '#8B5CF6',
-    accentLight: '#A78BFA',
-    accentDark: '#7C3AED',
+    accent: '#F5B731',
+    accentLight: '#FFC94D',
+    accentDark: '#E5A020',
     like: '#FF6B6B',
     error: '#FF6B6B',
-    glow: 'rgba(139, 92, 246, 0.25)',
+    glow: 'rgba(245, 183, 49, 0.25)',
     backdrop: 'rgba(0, 0, 0, 0.7)',
+  },
+};
+
+const bizTheme: Theme = {
+  dark: false,
+  colors: {
+    primary: '#7C3AED',
+    background: '#FFFFFF',
+    surface: '#F5F3FF',
+    card: '#FFFFFF',
+    text: '#1F2937',
+    textSecondary: '#6B7280',
+    border: '#E5E7EB',
+    accent: '#7C3AED',
+    accentLight: '#A78BFA',
+    accentDark: '#5B21B6',
+    like: '#EF4444',
+    error: '#EF4444',
+    glow: 'rgba(124, 58, 237, 0.15)',
+    backdrop: 'rgba(0, 0, 0, 0.4)',
   },
 };
 
@@ -92,6 +113,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   }, []);
 
   const getEffectiveTheme = (): Theme => {
+    if (themeMode === 'biz') return bizTheme;
     if (themeMode === 'system') {
       return systemColorScheme === 'dark' ? darkTheme : lightTheme;
     }
@@ -99,6 +121,16 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   };
 
   const theme = getEffectiveTheme();
+
+  // Sincronizar navigation bar y status bar con el tema
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      NavigationBar.setBackgroundColorAsync(theme.colors.background);
+      NavigationBar.setButtonStyleAsync(theme.dark ? 'light' : 'dark');
+      StatusBar.setBackgroundColor(theme.colors.background);
+      StatusBar.setBarStyle(theme.dark ? 'light-content' : 'dark-content');
+    }
+  }, [theme]);
 
   // Fade-out after theme render
   useEffect(() => {
@@ -116,7 +148,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
 
   const setThemeMode = (mode: ThemeMode) => {
     const currentDark = theme.dark;
-    const targetDark = mode === 'dark' || (mode === 'system' && systemColorScheme === 'dark');
+    const targetDark = mode === 'dark';
 
     if (currentDark !== targetDark) {
       if (currentDark) {

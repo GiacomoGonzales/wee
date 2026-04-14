@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
   ScrollView,
   Dimensions,
   TextInput,
@@ -20,7 +19,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import { cloudinaryFeed, cloudinaryThumb } from '../services/cloudinaryService';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useUserProfile } from '../contexts/UserProfileContext';
@@ -32,6 +33,7 @@ import { notificationService } from '../services/notificationService';
 import { uploadCommentImage } from '../services/storageService';
 import { formatNumber, getRelativeTime } from '../data/mockData';
 import { Timestamp } from 'firebase/firestore';
+import { Video, ResizeMode, Audio } from 'expo-av';
 import AvatarDisplay from '../components/avatars/AvatarDisplay';
 import ImageViewer from '../components/ImageViewer';
 import CommentCard from '../components/CommentCard';
@@ -93,6 +95,8 @@ const PostDetailScreen: React.FC = () => {
     post.reposts || 0
   );
 
+  const videoRef = useRef<Video>(null);
+  const [isVideoMuted, setIsVideoMuted] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [commentText, setCommentText] = useState('');
   const [imageViewerVisible, setImageViewerVisible] = useState(false);
@@ -392,6 +396,34 @@ const PostDetailScreen: React.FC = () => {
     return new Date();
   };
 
+  const renderVideo = () => {
+    if (!post.videoUrl) return null;
+    return (
+      <View style={styles.videoContainer}>
+        <Video
+          ref={videoRef}
+          source={{ uri: post.videoUrl }}
+          style={styles.videoPlayer}
+          resizeMode={ResizeMode.COVER}
+          shouldPlay
+          isMuted={isVideoMuted}
+          isLooping
+        />
+        <TouchableOpacity
+          style={styles.videoMuteBtn}
+          onPress={() => setIsVideoMuted(prev => !prev)}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name={isVideoMuted ? 'volume-mute' : 'volume-high'}
+            size={scale(18)}
+            color="white"
+          />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   const renderImages = () => {
     if (!post.imageUrls || post.imageUrls.length === 0) return null;
 
@@ -405,7 +437,9 @@ const PostDetailScreen: React.FC = () => {
           activeOpacity={0.98}
         >
           <Image
-            source={{ uri: post.imageUrls[0] }}
+            source={{ uri: cloudinaryFeed(post.imageUrls[0]) }}
+            placeholder={post.imageUrlsThumbnails?.[0] ? { uri: post.imageUrlsThumbnails[0] } : undefined}
+            placeholderContentFit="cover"
             style={[
               styles.singleImage,
               {
@@ -413,7 +447,9 @@ const PostDetailScreen: React.FC = () => {
                 height: imageHeight,
               }
             ]}
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={0}
           />
         </TouchableOpacity>
       );
@@ -442,7 +478,9 @@ const PostDetailScreen: React.FC = () => {
               activeOpacity={0.98}
             >
               <Image
-                source={{ uri: imageUrl }}
+                source={{ uri: cloudinaryFeed(imageUrl) }}
+                placeholder={post.imageUrlsThumbnails?.[index] ? { uri: post.imageUrlsThumbnails[index] } : undefined}
+                placeholderContentFit="cover"
                 style={[
                   styles.carouselImage,
                   {
@@ -450,7 +488,9 @@ const PostDetailScreen: React.FC = () => {
                     height: imageHeight,
                   }
                 ]}
-                resizeMode="cover"
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={0}
               />
             </TouchableOpacity>
           ))}
@@ -595,8 +635,8 @@ const PostDetailScreen: React.FC = () => {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={0}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={-insets.bottom + 8}
     >
       {/* Header */}
       <View style={[styles.header, {
@@ -666,8 +706,11 @@ const PostDetailScreen: React.FC = () => {
           </Text>
         </View>
 
+        {/* Video */}
+        {renderVideo()}
+
         {/* Images */}
-        {renderImages()}
+        {!post.videoUrl && renderImages()}
 
         {/* Poll */}
         {renderPoll()}
@@ -1008,6 +1051,28 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.lg,
     lineHeight: scale(24),
     letterSpacing: -0.2,
+  },
+  videoContainer: {
+    position: 'relative',
+    borderRadius: BORDER_RADIUS.lg,
+    overflow: 'hidden',
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.md,
+    height: scale(350),
+    backgroundColor: '#000',
+  },
+  videoPlayer: {
+    width: '100%',
+    height: '100%',
+  },
+  videoMuteBtn: {
+    position: 'absolute',
+    bottom: SPACING.md,
+    right: SPACING.md,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: scale(16),
+    padding: scale(6),
   },
   singleImageContainer: {
     position: 'relative',

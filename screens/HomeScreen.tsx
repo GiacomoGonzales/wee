@@ -20,6 +20,7 @@ import ResponsiveLayout from '../components/ResponsiveLayout';
 import AvatarDisplay from '../components/avatars/AvatarDisplay';
 import { HomeStackParamList } from '../navigation/HomeStackNavigator';
 import { Image } from 'expo-image';
+import { Video, ResizeMode } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SPACING, FONT_SIZE, FONT_WEIGHT, BORDER_RADIUS } from '../constants/design';
 import { scale } from '../utils/scale';
@@ -102,7 +103,7 @@ const COMMUNITY_HERO_DATA: Record<string, { description: string; image: string; 
   'gaming-tech': {
     description: 'Videojuegos, gadgets, reviews y todo sobre el mundo gamer y tecnológico.',
     image: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&h=400&fit=crop&q=80',
-    color: '#8B5CF6',
+    color: '#F5B731',
     icon: 'game-controller-outline',
   },
   'educacion-carrera': {
@@ -174,7 +175,7 @@ const COMMUNITY_HERO_DATA: Record<string, { description: string; image: string; 
   'esoterico': {
     description: 'Astrología, tarot, energías y misterios del universo. ¿En qué crees?',
     image: 'https://images.unsplash.com/photo-1507400492013-162706c8c05e?w=800&h=400&fit=crop&q=80',
-    color: '#7C3AED',
+    color: '#E5A020',
     icon: 'moon-outline',
   },
   'accion-poetica': {
@@ -217,7 +218,7 @@ const COMMUNITY_HERO_DATA: Record<string, { description: string; image: string; 
   'tarot-lectura': {
     description: 'Lecturas de tarot, interpretaciones, arcanos y guía espiritual para tu camino.',
     image: 'https://images.unsplash.com/photo-1600429991827-5224817554f2?w=800&h=400&fit=crop&q=80',
-    color: '#8B5CF6',
+    color: '#F5B731',
     icon: 'moon-outline',
   },
   'recetas-abuela': {
@@ -264,8 +265,8 @@ type HomeScreenRouteProp = RouteProp<HomeStackParamList, 'Feed'>;
 const HomeScreen: React.FC = () => {
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { userProfile } = useUserProfile();
-  const { scrollToTopTrigger } = useScroll();
+  const { userProfile, hasHidiProfile, activeProfileType, switchIdentity } = useUserProfile();
+  const { scrollToTopTrigger, refreshTrigger } = useScroll();
   const { contentMaxWidth, isDesktop } = useResponsive();
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const route = useRoute<HomeScreenRouteProp>();
@@ -378,6 +379,13 @@ const HomeScreen: React.FC = () => {
     loadPosts(isFirstLoad.current);
     isFirstLoad.current = false;
   }, [selectedCommunitySlug]);
+
+  // Refresh feed when a new post is created
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      loadPosts(false, true);
+    }
+  }, [refreshTrigger]);
 
   // Scroll to top cuando se toca el tab de Home estando ya en Home
   // Si ya está arriba, refrescar la página
@@ -563,18 +571,8 @@ const HomeScreen: React.FC = () => {
   };
 
   const handleVideoPress = useCallback((post: Post, positionMillis?: number) => {
-    // Filter current feed posts to only videos
-    const videoPosts = posts.filter(p => !!p.videoUrl);
-    const parentNavigation = navigation.getParent();
-    if (parentNavigation) {
-      (parentNavigation as any).navigate('Reels', {
-        initialPost: post,
-        initialVideoPosts: videoPosts,
-        communitySlug: selectedCommunitySlug,
-        initialPositionMillis: positionMillis,
-      });
-    }
-  }, [posts, navigation, selectedCommunitySlug]);
+    handlePostPress(post);
+  }, []);
 
   // Obtener las comunidades del usuario para el filtro
   const getUserCommunities = useCallback(() => {
@@ -761,7 +759,7 @@ const HomeScreen: React.FC = () => {
     return {
       description: community?.description || 'Un espacio para compartir, debatir y conectar con la comunidad.',
       image: community?.imageUrl || 'https://images.unsplash.com/photo-1557683316-973673baf926?w=800&h=400&fit=crop&q=80',
-      color: '#8B5CF6',
+      color: '#F5B731',
       icon: community?.icon ? community.icon + '-outline' : 'people-outline',
     };
   };
@@ -796,16 +794,6 @@ const HomeScreen: React.FC = () => {
           style={styles.heroBottomFade}
         />
 
-        {/* Back button floating top-left */}
-        <View style={[styles.heroNav, { paddingTop: insets.top + SPACING.sm }]}>
-          <TouchableOpacity
-            style={styles.heroBackButton}
-            onPress={handleBackToLanding}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-back" size={scale(22)} color="white" />
-          </TouchableOpacity>
-        </View>
 
         {/* Content at bottom */}
         <View style={styles.heroContent}>
@@ -859,8 +847,42 @@ const HomeScreen: React.FC = () => {
           {renderCommunitySelector()}
         </View>
       )}
-      {/* Carrusel de destacados */}
-      {highlightedPosts.length > 0 && (
+      {/* Create post prompt */}
+      {user && userProfile && selectedCommunitySlug && (
+        <TouchableOpacity
+          style={[styles.createPrompt, { backgroundColor: theme.colors.card }]}
+          onPress={() => {
+            try {
+              const tabNav = navigation.getParent();
+              const mainNav = tabNav?.getParent();
+              if (mainNav) (mainNav as any).navigate('Create', { communitySlug: selectedCommunitySlug });
+              else if (tabNav) (tabNav as any).navigate('Create', { communitySlug: selectedCommunitySlug });
+            } catch {
+              (navigation as any).navigate('Create', { communitySlug: selectedCommunitySlug });
+            }
+          }}
+          activeOpacity={0.7}
+        >
+          <AvatarDisplay
+            size={34}
+            avatarType={userProfile.avatarType || 'predefined'}
+            avatarId={userProfile.avatarId || 'male'}
+            photoURL={userProfile.photoURL}
+            backgroundColor={theme.colors.accent}
+            showBorder={false}
+          />
+          <View style={[styles.createInput, { backgroundColor: theme.colors.surface }]}>
+            <Text style={[styles.createPlaceholder, { color: theme.colors.textSecondary }]}>
+              ¿Qué quieres compartir?
+            </Text>
+          </View>
+          <Ionicons name="image-outline" size={20} color={theme.colors.accent} />
+          <Ionicons name="videocam-outline" size={20} color={theme.colors.accent} />
+        </TouchableOpacity>
+      )}
+
+      {/* Carrusel de destacados — solo en Home, no en categorías */}
+      {highlightedPosts.length > 0 && !isFromLanding && (
         <View style={styles.highlightsSection}>
           <Text style={[styles.highlightsSectionTitle, { color: theme.colors.text }]}>
             Destacados
@@ -889,15 +911,38 @@ const HomeScreen: React.FC = () => {
                   activeOpacity={0.7}
                   onPress={() => handlePostPress(post)}
                 >
-                  <Text style={styles.highlightLabel}>
+                  <Text style={[styles.highlightLabel, { color: theme.colors.text }]}>
                     {emoji} {label}
                   </Text>
-                  <Text
-                    style={[styles.highlightContent, { color: theme.colors.text }]}
-                    numberOfLines={2}
-                  >
-                    {post.content}
-                  </Text>
+                  <View style={styles.highlightBody}>
+                    <Text
+                      style={[styles.highlightContent, { color: theme.colors.text, flex: 1 }]}
+                      numberOfLines={2}
+                    >
+                      {post.content}
+                    </Text>
+                    {(post.imageUrls?.[0] || post.videoUrl) && (
+                      <View style={[styles.highlightThumb, { backgroundColor: theme.colors.surface }]}>
+                        {post.videoUrl ? (
+                          <Video
+                            source={{ uri: post.videoUrl }}
+                            style={styles.highlightThumbMedia}
+                            resizeMode={ResizeMode.COVER}
+                            shouldPlay
+                            isMuted
+                            isLooping
+                          />
+                        ) : (
+                          <Image
+                            source={{ uri: post.imageUrls![0] }}
+                            style={styles.highlightThumbMedia}
+                            contentFit="cover"
+                            cachePolicy="memory-disk"
+                          />
+                        )}
+                      </View>
+                    )}
+                  </View>
                   <View style={styles.highlightStats}>
                     <View style={styles.highlightStat}>
                       <Ionicons name="thumbs-up-outline" size={scale(13)} color={theme.colors.textSecondary} />
@@ -937,26 +982,13 @@ const HomeScreen: React.FC = () => {
           translucent
         />
       )}
-      {/* Header fijo arriba — hidden when immersive hero is active */}
-      {!isDesktop && !hasImmersiveHero && (
+      {/* Header — stays at top, content scrolls underneath */}
+      {!isDesktop && (
         <View style={{ backgroundColor: theme.colors.background }}>
-          {isFromLanding ? (
-            <View style={[styles.feedHeader, { paddingTop: insets.top + SPACING.sm }]}>
-              <TouchableOpacity
-                style={styles.backButton}
-                onPress={handleBackToLanding}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="arrow-back" size={scale(24)} color={theme.colors.text} />
-              </TouchableOpacity>
-              <Text style={[styles.feedHeaderTitle, { color: theme.colors.text }]} numberOfLines={1}>
-                {getSelectedCommunityName()}
-              </Text>
-              <View style={styles.headerSpacer} />
-            </View>
-          ) : (
-            <Header onNotificationsPress={handleNotificationsPress} />
-          )}
+          <Header
+            onNotificationsPress={handleNotificationsPress}
+            onBackPress={isFromLanding ? handleBackToLanding : undefined}
+          />
         </View>
       )}
 
@@ -964,11 +996,11 @@ const HomeScreen: React.FC = () => {
       <FlatList
         ref={flatListRef}
         data={posts}
-        extraData={visiblePostIds}
         renderItem={renderPost}
         keyExtractor={item => item.id || item.userId}
         contentContainerStyle={[
-          posts.length === 0 && !hasImmersiveHero && styles.emptyContainer
+          posts.length === 0 && !hasImmersiveHero && styles.emptyContainer,
+          { paddingBottom: 80 },
         ]}
         showsVerticalScrollIndicator={false}
         onScroll={(event) => {
@@ -1026,6 +1058,7 @@ const HomeScreen: React.FC = () => {
           </View>
         )}
       />
+
     </View>
   );
 };
@@ -1054,6 +1087,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: SPACING.md,
   },
   heroBackButton: {
@@ -1063,6 +1097,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  heroSwitchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    paddingHorizontal: scale(12),
+    paddingVertical: scale(7),
+    borderRadius: scale(18),
+  },
+  heroSwitchText: {
+    color: 'white',
+    fontSize: FONT_SIZE.xs,
+    fontWeight: FONT_WEIGHT.semibold,
   },
   heroContent: {
     position: 'absolute',
@@ -1144,6 +1192,18 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: scale(32),
   },
+  switchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: scale(10),
+    paddingVertical: scale(6),
+    borderRadius: BORDER_RADIUS.full,
+  },
+  switchBtnText: {
+    fontSize: FONT_SIZE.xs,
+    fontWeight: FONT_WEIGHT.medium,
+  },
   tabContainer: {
     flexDirection: 'row',
     borderBottomWidth: scale(0.5),
@@ -1223,6 +1283,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: SPACING.lg,
   },
+  createPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    gap: SPACING.sm,
+  },
+  createInput: {
+    flex: 1,
+    height: 36,
+    borderRadius: BORDER_RADIUS.full,
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.md,
+  },
+  createPlaceholder: {
+    fontSize: FONT_SIZE.sm,
+  },
   highlightsSection: {
     paddingTop: SPACING.md,
     paddingBottom: SPACING.sm,
@@ -1250,11 +1327,25 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
     letterSpacing: 0.3,
   },
+  highlightBody: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
   highlightContent: {
     fontSize: FONT_SIZE.sm,
     fontWeight: FONT_WEIGHT.regular,
     lineHeight: scale(18),
-    marginBottom: SPACING.md,
+  },
+  highlightThumb: {
+    width: scale(56),
+    height: scale(56),
+    borderRadius: BORDER_RADIUS.sm,
+    overflow: 'hidden',
+  },
+  highlightThumbMedia: {
+    width: '100%',
+    height: '100%',
   },
   highlightStats: {
     flexDirection: 'row',

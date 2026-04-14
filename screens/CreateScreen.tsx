@@ -24,7 +24,8 @@ import { performAvatarReplacement, uploadImageForSwap, saveFaceSwapResult } from
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { Video, ResizeMode } from 'expo-av';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, CommonActions } from '@react-navigation/native';
+import { useScroll } from '../contexts/ScrollContext';
 import { Timestamp } from 'firebase/firestore';
 import { SPACING, FONT_SIZE, FONT_WEIGHT, BORDER_RADIUS } from '../constants/design';
 import { scale } from '../utils/scale';
@@ -53,6 +54,10 @@ const CreateScreen: React.FC = () => {
   const { userProfile } = useUserProfile();
   const { contentMaxWidth } = useResponsive();
   const navigation = useNavigation();
+  const route = useRoute();
+  const { triggerScrollToTop, triggerRefresh } = useScroll();
+  const routeParams = (route.params as any) || {};
+  const presetCommunitySlug = routeParams.communitySlug || null;
 
   const [postText, setPostText] = useState('');
   const [attachedMedia, setAttachedMedia] = useState<MediaItem[]>([]);
@@ -77,7 +82,7 @@ const CreateScreen: React.FC = () => {
       result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
         quality: 0.8,
-        allowsEditing: true,
+        allowsEditing: false,
         base64: true,
       });
     } else {
@@ -89,7 +94,7 @@ const CreateScreen: React.FC = () => {
       result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         quality: 0.8,
-        allowsEditing: true,
+        allowsEditing: false,
         base64: true,
       });
     }
@@ -231,7 +236,6 @@ const CreateScreen: React.FC = () => {
         allowsMultipleSelection: !hasVideo,
         selectionLimit: hasVideo ? 0 : maxImages - attachedMedia.length,
         quality: 0.8,
-        aspect: [1, 1],
         videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
       });
 
@@ -300,8 +304,7 @@ const CreateScreen: React.FC = () => {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.8,
-        aspect: [1, 1],
-        allowsEditing: true,
+        allowsEditing: false,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -456,6 +459,20 @@ const CreateScreen: React.FC = () => {
         updatedAt: Timestamp.now(),
       };
 
+      // If posting from a community, resolve and attach communityId
+      if (presetCommunitySlug) {
+        try {
+          const { communityService } = await import('../services/communityService');
+          const comm = await communityService.getCommunityBySlug(presetCommunitySlug);
+          if (comm?.id) {
+            postData.communityId = comm.id;
+            postData.communitySlug = presetCommunitySlug;
+          }
+        } catch (e) {
+          console.warn('Could not resolve community:', e);
+        }
+      }
+
       // Solo agregar poll si existe (evitar undefined en Firestore)
       if (poll) {
         postData.poll = {
@@ -479,8 +496,10 @@ const CreateScreen: React.FC = () => {
       setUploadProgress({});
       setPoll(null);
 
-      // Volver al home
+      // Volver al Home, refresh feed y scroll to top para ver el nuevo post
       navigation.goBack();
+      triggerRefresh();
+      triggerScrollToTop();
 
     } catch (error) {
       console.error('Error publishing post:', error);
@@ -843,15 +862,18 @@ const CreateScreen: React.FC = () => {
 
         <TouchableOpacity
           style={[styles.postButton, {
-            backgroundColor: canPublish ? theme.colors.accent : theme.colors.surface,
-            opacity: canPublish ? 1 : 0.5,
+            backgroundColor: isPublishing ? theme.colors.accent : canPublish ? theme.colors.accent : theme.colors.surface,
+            opacity: isPublishing ? 0.7 : canPublish ? 1 : 0.5,
           }]}
           onPress={handlePublish}
           disabled={!canPublish}
           activeOpacity={0.8}
         >
           {isPublishing ? (
-            <ActivityIndicator size="small" color="white" />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <ActivityIndicator size="small" color="white" />
+              <Text style={styles.postButtonText}>Publicando...</Text>
+            </View>
           ) : (
             <Text style={styles.postButtonText}>Postear</Text>
           )}
@@ -894,15 +916,14 @@ const CreateScreen: React.FC = () => {
           </View>
         </ScrollView>
 
-        {/* Toolbar fija que sigue al teclado */}
+        {/* Toolbar flotante estilo navbar */}
         <View style={[
           styles.toolbarContainer,
           {
-            backgroundColor: theme.colors.background,
-            borderTopColor: theme.colors.border,
+            backgroundColor: theme.dark ? 'rgba(30,30,30,0.95)' : 'rgba(255,255,255,0.95)',
+            borderColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
             maxWidth: contentMaxWidth,
             alignSelf: 'center',
-            width: '100%',
           }
         ]}>
           {renderToolbar()}
@@ -1053,8 +1074,17 @@ const styles = StyleSheet.create({
   },
   // Toolbar container que sigue al teclado
   toolbarContainer: {
-    borderTopWidth: scale(0.5),
+    marginHorizontal: 12,
+    marginBottom: 10,
+    borderRadius: 28,
+    borderWidth: 0.5,
     paddingHorizontal: SPACING.lg,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    overflow: 'hidden',
   },
   // Toolbar estilo X.com
   toolbar: {

@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, CommonActions } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -35,8 +35,8 @@ const SettingsScreen: React.FC = () => {
 
   const handleAbout = () => {
     Alert.alert(
-      'Acerca de HideTok',
-      'HideTok v1.0.0\n\nUna plataforma social anónima donde puedes expresarte libremente.\n\n© 2024 HideTok. Todos los derechos reservados.',
+      'Acerca de Weë',
+      'Weë v1.0.0\n\nUna plataforma social anónima donde puedes expresarte libremente.\n\n© 2024 Weë. Todos los derechos reservados.',
       [{ text: 'OK', style: 'default' }]
     );
   };
@@ -72,6 +72,15 @@ const SettingsScreen: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Navegar al root antes de hacer logout para evitar errores
+              // en pantallas que intentan acceder a datos del usuario
+              const rootNav = navigation.getParent()?.getParent() || navigation.getParent() || navigation;
+              rootNav.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [{ name: 'Main' }],
+                })
+              );
               await logout();
             } catch (error) {
               Alert.alert('Error', 'No se pudo cerrar la sesión');
@@ -228,7 +237,7 @@ const SettingsScreen: React.FC = () => {
           <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
             {renderSettingItem(
               'information-circle',
-              'Acerca de HideTok',
+              'Acerca de Weë',
               'Versión, términos y información de la app',
               handleAbout
             )}
@@ -277,7 +286,7 @@ const SettingsScreen: React.FC = () => {
         {/* Version Info */}
         <View style={styles.versionContainer}>
           <Text style={[styles.versionText, { color: theme.colors.textSecondary }]}>
-            HideTok v1.0.0
+            Weë v1.0.0
           </Text>
           <Text style={[styles.versionSubtext, { color: theme.colors.textSecondary }]}>
             Aplicación demo • Sin conexión real

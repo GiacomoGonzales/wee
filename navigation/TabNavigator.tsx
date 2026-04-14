@@ -1,63 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { TouchableOpacity, View, StyleSheet, Platform } from 'react-native';
+import { TouchableOpacity, View, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import { useTheme } from '../contexts/ThemeContext';
 import { useUserProfile } from '../contexts/UserProfileContext';
 import { useScroll } from '../contexts/ScrollContext';
 import { useResponsive } from '../hooks/useResponsive';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 
 import HomeStackNavigator from './HomeStackNavigator';
 import InboxStackNavigator from './InboxStackNavigator';
 import ProfileStackNavigator from './ProfileStackNavigator';
+import SearchScreen from '../screens/SearchScreen';
 import { MainStackParamList } from './MainStackNavigator';
-import CustomTabBar from '../components/CustomTabBar';
 import AvatarDisplay from '../components/avatars/AvatarDisplay';
 import { useAuth } from '../contexts/AuthContext';
 import { messagesService } from '../services/messagesService';
+import CustomTabBar from '../components/CustomTabBar';
 
-// Componentes dummy para pestañas que abren modales
-const SearchTabPlaceholder = () => null;
+// Create sigue como modal (fullscreen)
 const CreateTabPlaceholder = () => null;
 
 const Tab = createBottomTabNavigator();
 
 type TabNavigatorNavigationProp = StackNavigationProp<MainStackParamList>;
-
-// Componentes personalizados para los botones de tab
-const SearchTabButton = (props: any) => {
-  const navigation = useNavigation<TabNavigatorNavigationProp>();
-  const { user } = useAuth();
-
-  return (
-    <TouchableOpacity
-      {...props}
-      onPress={() => {
-        if (!user) {
-          const parentNav = navigation.getParent();
-          if (parentNav) {
-            (parentNav as any).navigate('Register');
-          }
-          return;
-        }
-        try {
-          const parentNav = navigation.getParent();
-          if (parentNav) {
-            (parentNav as any).navigate('Search');
-          } else {
-            (navigation as any).navigate('Search');
-          }
-        } catch (error) {
-          console.error('Error navigating to Search:', error);
-        }
-      }}
-    />
-  );
-};
 
 const CreateTabButton = (props: any) => {
   const navigation = useNavigation<TabNavigatorNavigationProp>();
@@ -98,49 +66,34 @@ const TabNavigator: React.FC = () => {
   const insets = useSafeAreaInsets();
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Suscribirse al conteo de mensajes no leídos
-  const activeUid = userProfile?.uid || user?.uid;
+  // Suscribirse al conteo de mensajes no leídos (siempre con uid real, no biz)
+  const realUid = user?.uid;
   useEffect(() => {
-    if (!activeUid) {
+    if (!realUid) {
       setUnreadCount(0);
       return;
     }
 
-    const unsubscribe = messagesService.subscribeToUnreadCount(activeUid, (count) => {
+    const unsubscribe = messagesService.subscribeToUnreadCount(realUid, (count) => {
       setUnreadCount(count);
     });
 
     return () => unsubscribe();
-  }, [activeUid]);
-
-  // Calcular padding inferior para Android
-  // Si insets.bottom > 0, el sistema ya reporta el safe area (navegación por gestos)
-  // Si insets.bottom === 0, puede ser un dispositivo con botones fijos
-  const androidBottomPadding = insets.bottom > 0
-    ? insets.bottom + 10  // Dispositivo con safe area reportado
-    : 15;                 // Dispositivo con botones fijos (padding moderado)
-
-  const androidHeight = insets.bottom > 0
-    ? 60 + insets.bottom + 10
-    : 75;                 // Altura moderada para botones fijos
+  }, [realUid]);
 
   return (
     <Tab.Navigator
+      initialRouteName="Home"
+      backBehavior="initialRoute"
       tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarBackground: () => (
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.dark ? 'rgba(10, 10, 10, 0.85)' : 'rgba(255, 255, 255, 0.95)' }]}>
-            <BlurView
-              intensity={80}
-              tint={theme.dark ? 'dark' : 'light'}
-              style={StyleSheet.absoluteFill}
-            />
-          </View>
-        ),
         tabBarIcon: ({ focused, color, size }) => {
           // Para Profile, mostrar el avatar del usuario
           if (route.name === 'Profile') {
+            if (!user) {
+              return <Ionicons name={focused ? 'person-circle' : 'person-circle-outline'} size={28} color={color} />;
+            }
             return (
               <View style={{
                 borderWidth: focused ? 2 : 0,
@@ -180,39 +133,31 @@ const TabNavigator: React.FC = () => {
               iconName = 'home-outline';
           }
 
-          return <Ionicons name={iconName} size={22} color={color} />;
+          return <Ionicons name={iconName} size={28} color={color} />;
         },
         tabBarActiveTintColor: theme.colors.accent,
         tabBarInactiveTintColor: theme.colors.textSecondary,
         tabBarStyle: (isDesktop || isTablet) ? {
           display: 'none',
         } : {
+          position: 'absolute' as const,
+          bottom: 0,
+          left: 0,
+          right: 0,
           backgroundColor: 'transparent',
-          borderTopColor: theme.colors.border,
-          borderTopWidth: 0.5,
-          height: Platform.OS === 'android'
-            ? androidHeight
-            : Math.max(90, 60 + insets.bottom),
-          paddingBottom: Platform.OS === 'android'
-            ? androidBottomPadding
-            : Math.max(20, insets.bottom),
-          paddingTop: 10,
-          marginBottom: 0,
-          elevation: 8,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 3,
+          borderTopWidth: 0,
+          height: 56 + insets.bottom,
+          paddingBottom: insets.bottom,
+          elevation: 0,
+          shadowOpacity: 0,
         },
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '500',
-          marginTop: 2,
-          marginBottom: 0,
-          letterSpacing: -0.2,
+          marginTop: -2,
         },
         tabBarItemStyle: {
-          paddingVertical: 4,
+          paddingTop: 6,
         },
       })}
     >
@@ -222,10 +167,8 @@ const TabNavigator: React.FC = () => {
         options={{ tabBarLabel: 'Inicio' }}
         listeners={({ navigation }) => ({
           tabPress: (e) => {
-            // Si ya estamos en Home, hacer scroll to top
             const state = navigation.getState();
-            const homeRoute = state.routes.find((r: any) => r.name === 'Home');
-            if (state.index === 0 && homeRoute) {
+            if (state.index === 0) {
               triggerScrollToTop();
             }
           },
@@ -233,11 +176,17 @@ const TabNavigator: React.FC = () => {
       />
       <Tab.Screen
         name="Search"
-        component={SearchTabPlaceholder}
-        options={{
-          tabBarLabel: 'Buscar',
-          tabBarButton: (props) => <SearchTabButton {...props} />
-        }}
+        component={SearchScreen}
+        options={{ tabBarLabel: 'Buscar' }}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            if (!user) {
+              e.preventDefault();
+              const parentNav = navigation.getParent();
+              if (parentNav) (parentNav as any).navigate('Register');
+            }
+          },
+        })}
       />
       <Tab.Screen
         name="Create"
@@ -250,18 +199,24 @@ const TabNavigator: React.FC = () => {
       <Tab.Screen
         name="Inbox"
         component={InboxStackNavigator}
-        options={{
-          tabBarLabel: 'Inbox',
-          tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
-          tabBarBadgeStyle: {
-            backgroundColor: theme.colors.accent,
-            color: '#FFFFFF',
-            fontSize: 11,
-            fontWeight: '600',
-            minWidth: 18,
-            height: 18,
-            borderRadius: 9,
-          },
+        options={({ route }) => {
+          const focusedRoute = getFocusedRouteNameFromRoute(route) ?? 'InboxList';
+          return {
+            tabBarLabel: 'WeëTalk',
+            tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
+            tabBarBadgeStyle: {
+              backgroundColor: theme.colors.accent,
+              color: '#FFFFFF',
+              fontSize: 11,
+              fontWeight: '600',
+              minWidth: 18,
+              height: 18,
+              borderRadius: 9,
+            },
+            ...(focusedRoute === 'Conversation' && {
+              tabBarStyle: { display: 'none' as const },
+            }),
+          };
         }}
         listeners={({ navigation }) => ({
           tabPress: (e) => {

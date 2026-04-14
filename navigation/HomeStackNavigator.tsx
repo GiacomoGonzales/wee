@@ -7,7 +7,7 @@ import NotificationsScreen from '../screens/NotificationsScreen';
 import CommunitiesManagementScreen from '../screens/CommunitiesManagementScreen';
 
 export type HomeStackParamList = {
-  Landing: undefined;
+  Landing: { openWeels?: boolean; weelsCommunitySlug?: string; initialPostId?: string } | undefined;
   Feed: { communityId?: string | null; communitySlug?: string | null } | undefined;
   HomeFeed: undefined;
   Notifications: undefined;
@@ -21,6 +21,14 @@ const HomeStackNavigator: React.FC = () => {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
+        cardStyleInterpolator: ({ current }) => ({
+          cardStyle: { opacity: current.progress },
+        }),
+        transitionSpec: {
+          open: { animation: 'timing', config: { duration: 150, useNativeDriver: true } },
+          close: { animation: 'timing', config: { duration: 150, useNativeDriver: true } },
+        },
+        detachPreviousScreen: true,
       }}
     >
       <Stack.Screen
