@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>546769059837-dnbs4q376nuj3dunrdfm6nt8og65v1cg.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.546769059837-dnbs4q376nuj3dunrdfm6nt8og65v1cg</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>546769059837-ehudcfdad6rlnf6q4dahk2p42glrq21k.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyDuqbfstnpyiaFRL0AGKFaJf85lELCYZm8</string>
+	<key>GCM_SENDER_ID</key>
+	<string>546769059837</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>zone.wee.app</string>
+	<key>PROJECT_ID</key>
+	<string>get-wee</string>
+	<key>STORAGE_BUCKET</key>
+	<string>get-wee.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:546769059837:ios:dc2b2b3b603add12a4a394</string>
+</dict>
+</plist>
