@@ -109,7 +109,14 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
           break;
         case 'message':
           if (data.conversationId) {
-            navigation.navigate('Conversation', { conversationId: data.conversationId });
+            // Navigate to nested Conversation screen inside Inbox tab
+            navigation.navigate('Main', {
+              screen: 'Inbox',
+              params: {
+                screen: 'Conversation',
+                params: { conversationId: data.conversationId },
+              },
+            });
           }
           break;
         default:

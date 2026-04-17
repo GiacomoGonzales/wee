@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNavigation, useRoute, useNavigationState, CommonActions } from '@react-navigation/native';
@@ -7,6 +7,20 @@ import { useAuth } from '../contexts/AuthContext';
 import { useUserProfile } from '../contexts/UserProfileContext';
 import AvatarDisplay from './avatars/AvatarDisplay';
 import { SPACING, FONT_SIZE, FONT_WEIGHT, BORDER_RADIUS, ICON_SIZE } from '../constants/design';
+
+const isWeb = Platform.OS === 'web';
+
+// Emoji fallbacks for web
+const ICON_EMOJI: Record<string, string> = {
+  'home': '🏠',
+  'search': '🔍',
+  'mail': '✉️',
+  'person': '👤',
+  'settings': '⚙️',
+  'add': '➕',
+  'ellipsis-horizontal': '•••',
+  'shield-checkmark': '🛡️',
+};
 
 interface SidebarItemProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -17,6 +31,8 @@ interface SidebarItemProps {
 
 const SidebarItem: React.FC<SidebarItemProps> = ({ icon, label, active, onPress }) => {
   const { theme } = useTheme();
+  const iconName = icon.replace('-outline', '').replace('-sharp', '');
+  const emoji = ICON_EMOJI[iconName] || '•';
 
   return (
     <TouchableOpacity
@@ -24,20 +40,23 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ icon, label, active, onPress 
         styles.sidebarItem,
         active && {
           backgroundColor: theme.colors.surface,
-          shadowColor: theme.colors.accent,
-          shadowOffset: { width: 0, height: 0 },
-          shadowOpacity: 0.15,
-          shadowRadius: 8,
-        }
+        },
+        isWeb && { cursor: 'pointer' } as any,
       ]}
       onPress={onPress}
       activeOpacity={0.7}
     >
-      <Ionicons
-        name={icon}
-        size={ICON_SIZE.lg}
-        color={active ? theme.colors.accent : theme.colors.text}
-      />
+      {isWeb ? (
+        <Text style={[styles.iconEmoji, { color: active ? theme.colors.accent : theme.colors.text }]}>
+          {emoji}
+        </Text>
+      ) : (
+        <Ionicons
+          name={icon}
+          size={ICON_SIZE.lg}
+          color={active ? theme.colors.accent : theme.colors.text}
+        />
+      )}
       <Text style={[
         styles.sidebarLabel,
         { color: active ? theme.colors.accent : theme.colors.text }
@@ -105,7 +124,11 @@ const Sidebar: React.FC = () => {
             resizeMode="contain"
           />
           <View style={styles.privacyBadge}>
-            <Ionicons name="shield-checkmark" size={12} color={theme.colors.accent} />
+            {isWeb ? (
+              <Text style={{ fontSize: 12 }}>🛡️</Text>
+            ) : (
+              <Ionicons name="shield-checkmark" size={12} color={theme.colors.accent} />
+            )}
             <Text style={[styles.privacyText, { color: theme.colors.textSecondary }]}>
               Privado
             </Text>
@@ -152,13 +175,17 @@ const Sidebar: React.FC = () => {
             styles.createButton,
             {
               backgroundColor: theme.colors.accent,
-              shadowColor: theme.colors.accent,
-            }
+            },
+            isWeb && { cursor: 'pointer' } as any,
           ]}
           onPress={() => handleNavigate('Create')}
           activeOpacity={0.8}
         >
-          <Ionicons name="add" size={24} color="white" />
+          {isWeb ? (
+            <Text style={styles.createButtonEmoji}>➕</Text>
+          ) : (
+            <Ionicons name="add" size={24} color="white" />
+          )}
           <Text style={styles.createButtonText}>Crear</Text>
         </TouchableOpacity>
 
@@ -192,7 +219,11 @@ const Sidebar: React.FC = () => {
               Cerrar sesión
             </Text>
           </View>
-          <Ionicons name="ellipsis-horizontal" size={20} color={theme.colors.textSecondary} />
+          {isWeb ? (
+            <Text style={{ fontSize: 16, color: theme.colors.textSecondary }}>•••</Text>
+          ) : (
+            <Ionicons name="ellipsis-horizontal" size={20} color={theme.colors.textSecondary} />
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -242,9 +273,14 @@ const styles = StyleSheet.create({
     gap: SPACING.lg,
   },
   sidebarLabel: {
-    fontSize: FONT_SIZE.xl,
-    fontWeight: FONT_WEIGHT.regular,
+    fontSize: FONT_SIZE.lg,
+    fontWeight: FONT_WEIGHT.medium,
     letterSpacing: -0.3,
+  },
+  iconEmoji: {
+    fontSize: 22,
+    width: 28,
+    textAlign: 'center',
   },
   createButton: {
     flexDirection: 'row',
@@ -264,6 +300,10 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.base,
     fontWeight: FONT_WEIGHT.semibold,
     letterSpacing: -0.2,
+  },
+  createButtonEmoji: {
+    fontSize: 18,
+    color: 'white',
   },
   spacer: {
     flex: 1,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TouchableOpacity, View, StyleSheet } from 'react-native';
+import { TouchableOpacity, View, StyleSheet, Platform, Text } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
@@ -9,6 +9,17 @@ import { useResponsive } from '../hooks/useResponsive';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+
+const isWeb = Platform.OS === 'web';
+
+// Emoji icons for web
+const TAB_EMOJIS: Record<string, string> = {
+  'Home': '🏠',
+  'Search': '🔍',
+  'Create': '➕',
+  'Inbox': '💬',
+  'Profile': '👤',
+};
 
 import HomeStackNavigator from './HomeStackNavigator';
 import InboxStackNavigator from './InboxStackNavigator';
@@ -89,9 +100,37 @@ const TabNavigator: React.FC = () => {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarIcon: ({ focused, color, size }) => {
+          // Web: use emojis
+          if (isWeb) {
+            // Profile: show avatar or emoji
+            if (route.name === 'Profile' && user && userProfile) {
+              return (
+                <View style={{
+                  borderWidth: focused ? 2 : 0,
+                  borderColor: theme.colors.accent,
+                  borderRadius: 14,
+                  padding: focused ? 1 : 0,
+                }}>
+                  <AvatarDisplay
+                    size={24}
+                    avatarType={userProfile.avatarType || 'predefined'}
+                    avatarId={userProfile.avatarId || 'male'}
+                    photoURL={userProfile.photoURL}
+                    photoURLThumbnail={userProfile.photoURLThumbnail}
+                    backgroundColor={theme.colors.accent}
+                    showBorder={false}
+                  />
+                </View>
+              );
+            }
+            const emoji = TAB_EMOJIS[route.name] || '•';
+            return <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.6 }}>{emoji}</Text>;
+          }
+
+          // Mobile: use Ionicons
           // Para Profile, mostrar el avatar del usuario
           if (route.name === 'Profile') {
-            if (!user) {
+            if (!user || !userProfile) {
               return <Ionicons name={focused ? 'person-circle' : 'person-circle-outline'} size={28} color={color} />;
             }
             return (
@@ -103,10 +142,10 @@ const TabNavigator: React.FC = () => {
               }}>
                 <AvatarDisplay
                   size={24}
-                  avatarType={userProfile?.avatarType || 'predefined'}
-                  avatarId={userProfile?.avatarId || 'male'}
-                  photoURL={userProfile?.photoURL}
-                  photoURLThumbnail={userProfile?.photoURLThumbnail}
+                  avatarType={userProfile.avatarType || 'predefined'}
+                  avatarId={userProfile.avatarId || 'male'}
+                  photoURL={userProfile.photoURL}
+                  photoURLThumbnail={userProfile.photoURLThumbnail}
                   backgroundColor={theme.colors.accent}
                   showBorder={false}
                 />

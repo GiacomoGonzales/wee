@@ -352,6 +352,55 @@ export const voteService = {
       throw error;
     }
   },
+
+  // Obtener todos los posts donde el usuario votó "agree" (para tab de Likes en perfil)
+  getUserAgreedPosts: async (userId: string, limitCount = 50): Promise<any[]> => {
+    try {
+      const votesRef = collection(db, 'votes');
+      const q = query(
+        votesRef,
+        where('userId', '==', userId),
+        where('type', '==', 'agree')
+      );
+
+      const querySnapshot = await getDocs(q);
+      const postIds: string[] = [];
+
+      querySnapshot.forEach((docSnap) => {
+        const vote = docSnap.data() as Vote;
+        postIds.push(vote.postId);
+      });
+
+      if (postIds.length === 0) {
+        return [];
+      }
+
+      // Obtener los posts completos
+      const postsPromises = postIds.slice(0, limitCount).map(async (postId) => {
+        const postRef = doc(db, 'posts', postId);
+        const postDoc = await getDoc(postRef);
+
+        if (postDoc.exists()) {
+          return { id: postDoc.id, ...postDoc.data() };
+        }
+        return null;
+      });
+
+      const posts = await Promise.all(postsPromises);
+
+      // Filtrar posts que no existen (fueron eliminados) y ordenar por fecha
+      return posts
+        .filter(post => post !== null)
+        .sort((a, b) => {
+          const dateA = a.createdAt?.toDate?.() || new Date(0);
+          const dateB = b.createdAt?.toDate?.() || new Date(0);
+          return dateB.getTime() - dateA.getTime();
+        });
+    } catch (error) {
+      console.error('Error getting user agreed posts:', error);
+      return [];
+    }
+  },
 };
 
 export default voteService;

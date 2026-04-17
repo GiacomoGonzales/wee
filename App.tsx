@@ -1,8 +1,35 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Alert, Platform } from 'react-native';
 import * as Linking from 'expo-linking';
+
+// Fix for web scrolling - enable touch scrolling on mobile browsers
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = `
+    html, body, #root {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    #root > div {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    /* Enable touch scrolling for all scrollable elements */
+    [data-testid="scroll-view"],
+    [class*="ScrollView"],
+    div[style*="overflow"] {
+      -webkit-overflow-scrolling: touch !important;
+      touch-action: pan-y !important;
+      overscroll-behavior: contain;
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider } from './contexts/AuthContext';

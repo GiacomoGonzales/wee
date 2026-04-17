@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,9 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
+  Animated,
+  Easing,
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -66,6 +69,34 @@ const CreateScreen: React.FC = () => {
   const [poll, setPoll] = useState<Poll | null>(null);
 
   const [faceSwapLoading, setFaceSwapLoading] = useState(false);
+
+  // Animación de pulso para el overlay de publicación
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (isPublishing) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.15,
+            duration: 600,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 600,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [isPublishing]);
 
   const hasAvatar = !!userProfile?.aiAvatarPortraitUrl;
 
@@ -343,6 +374,9 @@ const CreateScreen: React.FC = () => {
       Alert.alert('Error', 'Debes estar autenticado para publicar');
       return;
     }
+
+    // Cerrar teclado inmediatamente
+    Keyboard.dismiss();
 
     console.log('🚀 Iniciando publicación...');
     console.log('👤 Usuario ID:', user.uid);
@@ -930,30 +964,41 @@ const CreateScreen: React.FC = () => {
         </View>
       </KeyboardAvoidingView>
 
-      {/* Video upload progress overlay */}
-      {isPublishing && attachedMedia.some(m => m.type === 'video') && (
-        <View style={styles.faceSwapOverlay}>
-          <View style={[styles.faceSwapLoadingBox, { backgroundColor: theme.colors.surface }]}>
-            <ActivityIndicator size="large" color={theme.colors.accent} />
-            <Text style={[styles.faceSwapLoadingText, { color: theme.colors.text }]}>
-              Subiendo video...
-            </Text>
-            {Object.values(uploadProgress).length > 0 && (
-              <View style={styles.uploadProgressBar}>
-                <View
-                  style={[
-                    styles.uploadProgressFill,
-                    {
-                      backgroundColor: theme.colors.accent,
-                      width: `${Math.max(Object.values(uploadProgress)[0] || 0, 5)}%`,
-                    },
-                  ]}
-                />
+      {/* Publishing overlay con animación de pulso */}
+      {isPublishing && (
+        <View style={styles.publishingOverlay}>
+          <View style={[styles.publishingBox, { backgroundColor: theme.colors.surface }]}>
+            <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+              <View style={[styles.publishingIconCircle, { backgroundColor: theme.colors.accent }]}>
+                <Ionicons name="paper-plane" size={scale(32)} color="#fff" />
               </View>
-            )}
-            <Text style={[styles.faceSwapLoadingText, { color: theme.colors.textSecondary, fontSize: scale(12) }]}>
-              {Math.round(Object.values(uploadProgress)[0] || 0)}%
+            </Animated.View>
+            <Text style={[styles.publishingTitle, { color: theme.colors.text }]}>
+              Publicando...
             </Text>
+            {attachedMedia.some(m => m.type === 'video') && Object.values(uploadProgress).length > 0 && (
+              <>
+                <View style={styles.uploadProgressBar}>
+                  <View
+                    style={[
+                      styles.uploadProgressFill,
+                      {
+                        backgroundColor: theme.colors.accent,
+                        width: `${Math.max(Object.values(uploadProgress)[0] || 0, 5)}%`,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={[styles.publishingSubtitle, { color: theme.colors.textSecondary }]}>
+                  Subiendo video: {Math.round(Object.values(uploadProgress)[0] || 0)}%
+                </Text>
+              </>
+            )}
+            {!attachedMedia.some(m => m.type === 'video') && (
+              <Text style={[styles.publishingSubtitle, { color: theme.colors.textSecondary }]}>
+                Tu post estará listo en un momento
+              </Text>
+            )}
           </View>
         </View>
       )}
@@ -1211,6 +1256,46 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,
+  },
+  publishingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  publishingBox: {
+    padding: SPACING.xxl,
+    paddingHorizontal: SPACING.xxl * 1.5,
+    borderRadius: BORDER_RADIUS.xl,
+    alignItems: 'center',
+    gap: SPACING.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  publishingIconCircle: {
+    width: scale(72),
+    height: scale(72),
+    borderRadius: scale(36),
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#F5B731',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  publishingTitle: {
+    fontSize: FONT_SIZE.lg,
+    fontWeight: FONT_WEIGHT.bold,
+    letterSpacing: -0.3,
+  },
+  publishingSubtitle: {
+    fontSize: FONT_SIZE.sm,
+    textAlign: 'center',
   },
   faceSwapLoadingBox: {
     padding: SPACING.xxl,

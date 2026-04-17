@@ -46,8 +46,10 @@ import { useVote } from '../hooks/useVote';
 import { formatNumber, getRelativeTime } from '../data/mockData';
 import { SPACING, FONT_SIZE, FONT_WEIGHT, BORDER_RADIUS } from '../constants/design';
 import { scale } from '../utils/scale';
+import { downloadVideoWithWatermark } from '../services/videoDownload';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const isWeb = Platform.OS === 'web';
 
 // Categorias del landing con iconos y colores
 const LANDING_CATEGORIES = [
@@ -272,6 +274,9 @@ const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, he
   const navigation = useNavigation();
   const isFocused = useIsFocused();
   const { hasReposted, repostsCount, toggleRepost } = useReposts(post.id!, post.reposts || 0);
+
+  // Verificar si es mi propio video
+  const isOwnPost = activeProfile?.uid === post.userId || user?.uid === post.userId;
   const shareCardRef = useRef<ViewShot>(null);
   const [showShareCard, setShowShareCard] = useState(false);
 
@@ -306,6 +311,41 @@ const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, he
   const [duration, setDuration] = useState(0);
   const [isScrubbing, setIsScrubbing] = useState(false);
 
+  // Double tap para like
+  const lastTapTime = useRef(0);
+  const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showLikeHeart, setShowLikeHeart] = useState(false);
+  const heartScale = useRef(new Animated.Value(0)).current;
+  const heartOpacity = useRef(new Animated.Value(0)).current;
+
+  // Sidebar expand/collapse
+  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const sidebarAnim = useRef(new Animated.Value(1)).current;
+
+  // Download state
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const toggleSidebar = useCallback(() => {
+    const toValue = sidebarExpanded ? 0 : 1;
+    setSidebarExpanded(!sidebarExpanded);
+    Animated.spring(sidebarAnim, {
+      toValue,
+      friction: 8,
+      tension: 100,
+      useNativeDriver: true,
+    }).start();
+  }, [sidebarExpanded, sidebarAnim]);
+
+  const handleDownload = useCallback(async () => {
+    if (isDownloading || !post.videoUrl) return;
+    setIsDownloading(true);
+    try {
+      await downloadVideoWithWatermark(post.videoUrl);
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [isDownloading, post.videoUrl]);
+
   const { stats: voteStats, voteAgree, voteDisagree } = useVote({
     postId: post.id!,
     userId: activeProfile?.uid || user?.uid,
@@ -328,19 +368,62 @@ const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, he
     }
   }, [isActive, isPaused, isFocused]);
 
+  // Animación del corazón
+  const animateLikeHeart = useCallback(() => {
+    setShowLikeHeart(true);
+    heartScale.setValue(0);
+    heartOpacity.setValue(1);
+
+    Animated.sequence([
+      Animated.spring(heartScale, {
+        toValue: 1,
+        friction: 3,
+        tension: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(heartOpacity, {
+        toValue: 0,
+        duration: 400,
+        delay: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => setShowLikeHeart(false));
+  }, [heartScale, heartOpacity]);
+
   const handleTapVideo = useCallback(() => {
-    if (!videoRef.current) return;
-    if (tapIconTimer.current) clearTimeout(tapIconTimer.current);
-    setShowTapIcon(true);
-    if (isPaused) {
-      videoRef.current.playAsync();
-      setIsPaused(false);
-      tapIconTimer.current = setTimeout(() => setShowTapIcon(false), 600);
-    } else {
-      videoRef.current.pauseAsync();
-      setIsPaused(true);
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+
+    // Detectar doble tap para like
+    if (now - lastTapTime.current < DOUBLE_TAP_DELAY) {
+      // Doble tap detectado - cancelar el timer del single tap
+      if (singleTapTimer.current) {
+        clearTimeout(singleTapTimer.current);
+        singleTapTimer.current = null;
+      }
+      // Dar like
+      if (voteStats.userVote !== 'agree') {
+        voteAgree();
+      }
+      animateLikeHeart();
+      lastTapTime.current = 0;
+      return;
     }
-  }, [isPaused]);
+
+    lastTapTime.current = now;
+
+    // Single tap - esperar para ver si viene otro tap
+    singleTapTimer.current = setTimeout(() => {
+      if (!videoRef.current) return;
+      if (isPaused) {
+        videoRef.current.playAsync();
+        setIsPaused(false);
+      } else {
+        videoRef.current.pauseAsync();
+        setIsPaused(true);
+      }
+    }, DOUBLE_TAP_DELAY);
+  }, [isPaused, voteStats.userVote, voteAgree, animateLikeHeart]);
 
   const handlePlaybackStatus = useCallback((status: AVPlaybackStatus) => {
     if (status.isLoaded) {
@@ -357,41 +440,48 @@ const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, he
 
   return (
     <View style={{ width: SCREEN_WIDTH, height, backgroundColor: '#000' }}>
-      {/* Poster image */}
-      {post.imageUrls?.[0] && (
+      {/* Video layer */}
+      <Video
+        ref={videoRef}
+        source={{ uri: post.videoUrl! }}
+        style={StyleSheet.absoluteFill}
+        resizeMode={ResizeMode.COVER}
+        shouldPlay={isActive}
+        isMuted={false}
+        isLooping
+        progressUpdateIntervalMillis={100}
+        onPlaybackStatusUpdate={handlePlaybackStatus}
+      />
+
+      {/* Poster image - visible hasta que el video empiece */}
+      {post.imageUrls?.[0] && !hasStartedPlaying && (
         <Image
           source={{ uri: post.imageUrls[0] }}
-          style={[StyleSheet.absoluteFill, { zIndex: hasStartedPlaying ? 0 : 2 }]}
+          style={StyleSheet.absoluteFill}
           contentFit="cover"
         />
       )}
 
-      {/* Video */}
+      {/* Touch overlay for play/pause and double tap to like - covers entire screen */}
       <TouchableOpacity
         activeOpacity={1}
+        style={[StyleSheet.absoluteFill, { zIndex: 5 }]}
         onPress={handleTapVideo}
-        style={[StyleSheet.absoluteFill, { zIndex: hasStartedPlaying ? 1 : 0 }]}
-      >
-        <Video
-          ref={videoRef}
-          source={{ uri: post.videoUrl! }}
-          style={{ width: '100%', height: '100%' }}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay={isActive}
-          isMuted={false}
-          isLooping
-          progressUpdateIntervalMillis={100}
-          onPlaybackStatusUpdate={handlePlaybackStatus}
-        />
-        {/* Play/Pause icon overlay */}
-        {showTapIcon && (
-          <View style={hidReelStyles.tapIconOverlay}>
-            <View style={hidReelStyles.tapIconCircle}>
-              <Ionicons name={isPaused ? 'pause' : 'play'} size={scale(40)} color="white" />
-            </View>
-          </View>
-        )}
-      </TouchableOpacity>
+      />
+
+      {/* Double tap like heart animation */}
+      {showLikeHeart && (
+        <View style={[hidReelStyles.likeHeartOverlay, { zIndex: 50 }]} pointerEvents="none">
+          <Animated.View
+            style={{
+              transform: [{ scale: heartScale }],
+              opacity: heartOpacity,
+            }}
+          >
+            <Ionicons name="thumbs-up" size={scale(100)} color="white" />
+          </Animated.View>
+        </View>
+      )}
 
       {/* Buffering spinner */}
       {isBuffering && isActive && hasStartedPlaying && (
@@ -460,16 +550,16 @@ const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, he
         pointerEvents="none"
       />
 
-      {/* Bottom gradient + info */}
+      {/* Bottom gradient + info - zIndex mayor que el touch overlay */}
       <LinearGradient
         colors={['transparent', 'rgba(0,0,0,0.7)']}
-        style={hidReelStyles.bottomGradient}
+        style={[hidReelStyles.bottomGradient, { zIndex: 10 }]}
         pointerEvents="box-none"
       >
-        <View style={hidReelStyles.bottomContent}>
+        <View style={hidReelStyles.bottomContent} pointerEvents="box-none">
           {/* Left: user info + description */}
-          <View style={hidReelStyles.bottomLeft}>
-            <View style={hidReelStyles.userRow}>
+          <View style={hidReelStyles.bottomLeft} pointerEvents="box-none">
+            <View style={hidReelStyles.userRow} pointerEvents="none">
               {postAuthor && (
                 <AvatarDisplay
                   size={scale(32)}
@@ -502,61 +592,101 @@ const HidReelItem: React.FC<HidReelItemProps> = React.memo(({ post, isActive, he
 
           {/* Right sidebar: actions */}
           <View style={hidReelStyles.rightSidebar}>
-            <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={voteAgree}>
+            {/* Toggle button */}
+            <TouchableOpacity style={hidReelStyles.sidebarToggle} onPress={toggleSidebar}>
               <Ionicons
-                name={voteStats.userVote === 'agree' ? 'thumbs-up' : 'thumbs-up-outline'}
-                size={scale(24)}
-                color={voteStats.userVote === 'agree' ? '#22C55E' : 'white'}
+                name={sidebarExpanded ? 'chevron-down' : 'chevron-up'}
+                size={scale(20)}
+                color="rgba(255,255,255,0.7)"
               />
-              <Text style={hidReelStyles.sidebarCount}>
-                {formatNumber(voteStats.agreementCount)}
-              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={voteDisagree}>
-              <Ionicons
-                name={voteStats.userVote === 'disagree' ? 'thumbs-down' : 'thumbs-down-outline'}
-                size={scale(24)}
-                color={voteStats.userVote === 'disagree' ? '#EF4444' : 'white'}
-              />
-              <Text style={hidReelStyles.sidebarCount}>
-                {formatNumber(voteStats.disagreementCount)}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={() => onComment(post.id!)}>
-              <Ionicons name="chatbubble-outline" size={scale(24)} color="white" />
-              <Text style={hidReelStyles.sidebarCount}>
-                {formatNumber(post.comments)}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={toggleRepost}>
-              <Ionicons name="repeat" size={scale(24)} color={hasReposted ? '#F5B731' : 'white'} />
-              <Text style={hidReelStyles.sidebarCount}>
-                {formatNumber(repostsCount)}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={() => {
-              if (!user || !postAuthor) return;
-              const tabNav = navigation.getParent();
-              if (tabNav) {
-                (tabNav as any).navigate('Inbox', {
-                  screen: 'Conversation',
-                  params: {
-                    otherUserId: post.userId,
-                    otherUserData: {
-                      displayName: postAuthor.displayName || 'Usuario',
-                      avatarType: postAuthor.avatarType,
-                      avatarId: postAuthor.avatarId,
-                      photoURL: typeof postAuthor.photoURL === 'string' ? postAuthor.photoURL : undefined,
-                    },
-                  },
-                });
-              }
-            }}>
-              <Ionicons name="paper-plane-outline" size={scale(24)} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={handleShare}>
-              <Ionicons name="share-social-outline" size={scale(24)} color="white" />
-            </TouchableOpacity>
+
+            {/* Animated buttons container */}
+            <Animated.View
+              style={[
+                hidReelStyles.sidebarButtons,
+                {
+                  opacity: sidebarAnim,
+                  transform: [{
+                    translateY: sidebarAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [20, 0],
+                    }),
+                  }],
+                },
+              ]}
+              pointerEvents={sidebarExpanded ? 'auto' : 'none'}
+            >
+              <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={voteAgree}>
+                <Ionicons
+                  name={voteStats.userVote === 'agree' ? 'thumbs-up' : 'thumbs-up-outline'}
+                  size={scale(24)}
+                  color="white"
+                />
+                <Text style={hidReelStyles.sidebarCount}>
+                  {formatNumber(voteStats.agreementCount)}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={voteDisagree}>
+                <Ionicons
+                  name={voteStats.userVote === 'disagree' ? 'thumbs-down' : 'thumbs-down-outline'}
+                  size={scale(24)}
+                  color="white"
+                />
+                <Text style={hidReelStyles.sidebarCount}>
+                  {formatNumber(voteStats.disagreementCount)}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={() => onComment(post.id!)}>
+                <Ionicons name="chatbubble-outline" size={scale(24)} color="white" />
+                <Text style={hidReelStyles.sidebarCount}>
+                  {formatNumber(post.comments)}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={toggleRepost}>
+                <Ionicons name="repeat" size={scale(24)} color={hasReposted ? '#F5B731' : 'white'} />
+                <Text style={hidReelStyles.sidebarCount}>
+                  {formatNumber(repostsCount)}
+                </Text>
+              </TouchableOpacity>
+              {/* Mensaje privado - ocultar en propios videos */}
+              {!isOwnPost && (
+                <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={() => {
+                  if (!user || !postAuthor) return;
+                  const tabNav = navigation.getParent();
+                  if (tabNav) {
+                    (tabNav as any).navigate('Inbox', {
+                      screen: 'Conversation',
+                      params: {
+                        otherUserId: post.userId,
+                        otherUserData: {
+                          displayName: postAuthor.displayName || 'Usuario',
+                          avatarType: postAuthor.avatarType,
+                          avatarId: postAuthor.avatarId,
+                          photoURL: typeof postAuthor.photoURL === 'string' ? postAuthor.photoURL : undefined,
+                        },
+                      },
+                    });
+                  }
+                }}>
+                  <Ionicons name="paper-plane-outline" size={scale(24)} color="white" />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={hidReelStyles.sidebarBtn} onPress={handleShare}>
+                <Ionicons name="share-social-outline" size={scale(24)} color="white" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={hidReelStyles.sidebarBtn}
+                onPress={handleDownload}
+                disabled={isDownloading}
+              >
+                {isDownloading ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <Ionicons name="download-outline" size={scale(24)} color="white" />
+                )}
+              </TouchableOpacity>
+            </Animated.View>
           </View>
         </View>
       </LinearGradient>
@@ -594,6 +724,11 @@ const hidReelStyles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingLeft: scale(4),
+  },
+  likeHeartOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
@@ -689,8 +824,15 @@ const hidReelStyles = StyleSheet.create({
   },
   rightSidebar: {
     alignItems: 'center',
+    marginBottom: scale(80),
+  },
+  sidebarToggle: {
+    padding: scale(8),
+    marginBottom: scale(4),
+  },
+  sidebarButtons: {
+    alignItems: 'center',
     gap: scale(14),
-    paddingBottom: scale(8),
   },
   sidebarBtn: {
     alignItems: 'center',
@@ -707,7 +849,7 @@ const LandingScreen: React.FC = () => {
   const { theme } = useTheme();
   const { user } = useAuth();
   const { userProfile } = useUserProfile();
-  const { scrollToTopTrigger } = useScroll();
+  const { scrollToTopTrigger, refreshTrigger } = useScroll();
   const { setIsTransparent: setTabBarTransparent, scrollProgress: tabBarProgress } = useTabBar();
   const navigation = useNavigation<LandingScreenNavigationProp>();
   const route = useRoute<any>();
@@ -741,6 +883,7 @@ const LandingScreen: React.FC = () => {
   const [hidsReady, setHidsReady] = useState(true);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [categoriesExpanded, setCategoriesExpanded] = useState(true);
+  const [showAllCategories, setShowAllCategories] = useState(false);
   const [videoScrubbing, setVideoScrubbing] = useState(false);
   const videoScrubbingRef = useRef(false);
   const setVideoScrubbingBoth = useCallback((val: boolean) => {
@@ -883,13 +1026,14 @@ const LandingScreen: React.FC = () => {
 
   const loadVideoPosts = useCallback(async (communitySlug?: string | null) => {
     setVideosLoading(true);
+    console.log('🎬 Cargando videos para Weels, filtro:', communitySlug || 'TODOS');
     try {
-      const result = await postsService.getVideoPostsPaginated(15);
-      let filtered = result.documents;
-      if (communitySlug) {
-        filtered = filtered.filter(p => p.communitySlug === communitySlug);
-      }
-      setVideoPosts(filtered);
+      const result = await postsService.getVideoPostsPaginated(15, undefined, communitySlug || undefined);
+      console.log('🎬 Videos encontrados:', result.documents.length);
+      result.documents.forEach((p, i) => {
+        console.log(`  ${i + 1}. ${p.id} - videoUrl: ${p.videoUrl ? 'SÍ' : 'NO'} - community: ${p.communitySlug || 'ninguna'}`);
+      });
+      setVideoPosts(result.documents);
       setVideoLastDoc(result.lastDoc);
     } catch (error) {
       console.error('Error loading video posts:', error);
@@ -913,55 +1057,23 @@ const LandingScreen: React.FC = () => {
     }
   }, [openWeelsParam, weelsCommunitySlug]);
 
-  // Hero carousel phrases
+  // Hero content
   const HERO_PHRASES = useRef([
     { title: 'Crea tu alter ego digital Weë', subtitle: 'World Encode Entity' },
-    { title: 'Tu identidad real. Tu identidad Weë.', subtitle: 'Sé tú... o sé tu Weë.' },
-    { title: 'Publica lo que eres...', subtitle: 'sin mostrar quién eres.' },
-  ]).current;
-
-  const [heroIndex, setHeroIndex] = useState(0);
-  const HERO_INNER_WIDTH = SCREEN_WIDTH - SPACING.lg * 2;
-  const bgDriftX = useRef(new Animated.Value(0)).current;
-  const bgDriftY = useRef(new Animated.Value(0)).current;
-  const bgScale = useRef(new Animated.Value(1)).current;
-
-  const handleHeroScroll = useCallback((event: any) => {
-    const x = event.nativeEvent.contentOffset.x;
-    const index = Math.round(x / HERO_INNER_WIDTH);
-    if (index >= 0 && index < HERO_PHRASES.length) {
-      setHeroIndex(index);
-    }
-  }, [HERO_INNER_WIDTH]);
-
-  // Background constellation drift - slow floating movement
-  useEffect(() => {
-    const drift = Animated.loop(
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(bgDriftX, { toValue: 8, duration: 4000, useNativeDriver: true }),
-          Animated.timing(bgDriftY, { toValue: -6, duration: 4000, useNativeDriver: true }),
-          Animated.timing(bgScale, { toValue: 1.08, duration: 4000, useNativeDriver: true }),
-        ]),
-        Animated.parallel([
-          Animated.timing(bgDriftX, { toValue: -6, duration: 5000, useNativeDriver: true }),
-          Animated.timing(bgDriftY, { toValue: 5, duration: 5000, useNativeDriver: true }),
-          Animated.timing(bgScale, { toValue: 0.96, duration: 5000, useNativeDriver: true }),
-        ]),
-        Animated.parallel([
-          Animated.timing(bgDriftX, { toValue: 0, duration: 4000, useNativeDriver: true }),
-          Animated.timing(bgDriftY, { toValue: 0, duration: 4000, useNativeDriver: true }),
-          Animated.timing(bgScale, { toValue: 1, duration: 4000, useNativeDriver: true }),
-        ]),
-      ])
-    );
-    drift.start();
-    return () => drift.stop();
-  }, []);
+  ]);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Refresh cuando se crea un nuevo post (triggerRefresh desde CreateScreen)
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      console.log('🔄 Refreshing after new post created');
+      loadData(true);
+      loadVideoPosts(weelsFilter);
+    }
+  }, [refreshTrigger]);
 
   // Scroll to top + switch to Wall cuando se dispara el trigger
   useEffect(() => {
@@ -976,6 +1088,7 @@ const LandingScreen: React.FC = () => {
   }, [scrollToTopTrigger]);
 
   const loadData = async (isRefresh = false) => {
+    console.log('📝 loadData called, isRefresh:', isRefresh);
     try {
       if (!isRefresh) {
         setLoading(true);
@@ -983,11 +1096,14 @@ const LandingScreen: React.FC = () => {
 
       // Cargar comunidades
       const allCommunities = await communityService.getCommunities();
+      console.log('📝 Communities loaded:', allCommunities.length);
       setCommunities(allCommunities);
 
       // Cargar posts trending y destacado
+      console.log('📝 Loading posts...');
       const postsResult = await postsService.getPublicPostsPaginated(20);
       const posts = postsResult?.documents || [];
+      console.log('📝 Posts loaded:', posts.length, 'posts');
 
       // Guardar cursor para paginación
       setLastDoc(postsResult?.lastDoc || null);
@@ -1007,10 +1123,8 @@ const LandingScreen: React.FC = () => {
         setFeaturedPosts(next3);
         setFeaturedIndex(0);
 
-        // Excluir los 6 destacados del feed principal
-        const excludeIds = new Set(sorted.slice(0, 6).map(p => p.id));
-        const feedFiltered = posts.filter(p => !excludeIds.has(p.id));
-        setFeedPosts(feedFiltered);
+        // Mostrar TODOS los posts en el feed (ya no excluimos los destacados)
+        setFeedPosts(posts);
       } else {
         setFeedPosts([]);
         setTrendingPosts([]);
@@ -1034,14 +1148,7 @@ const LandingScreen: React.FC = () => {
       const newPosts = postsResult?.documents || [];
 
       if (newPosts.length > 0) {
-        // Excluir los 6 posts destacados que ya se muestran arriba
-        const excludeIds = new Set([
-          ...trendingPosts.map(p => p.id),
-          ...featuredPosts.map(p => p.id),
-        ]);
-        const filtered = newPosts.filter(p => !excludeIds.has(p.id));
-
-        setFeedPosts(prev => [...prev, ...filtered]);
+        setFeedPosts(prev => [...prev, ...newPosts]);
         setLastDoc(postsResult?.lastDoc || null);
       }
 
@@ -1051,7 +1158,7 @@ const LandingScreen: React.FC = () => {
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, hasMore, lastDoc, trendingPosts, featuredPosts]);
+  }, [loadingMore, hasMore, lastDoc]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -1194,7 +1301,6 @@ const LandingScreen: React.FC = () => {
   };
 
   const renderHero = () => {
-    const slideHeight = scale(120);
     return (
       <View style={styles.heroWrapper}>
         <LinearGradient
@@ -1203,67 +1309,18 @@ const LandingScreen: React.FC = () => {
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
-          {/* Constellation pattern */}
-          <Animated.View style={[styles.constellationLayer, {
-            transform: [
-              { translateX: bgDriftX },
-              { translateY: bgDriftY },
-              { scale: bgScale },
-            ],
-          }]}>
-            <View style={[styles.constellationDot, styles.dotLg, { top: '15%', left: '5%', opacity: 0.5 }]} />
-            <View style={[styles.constellationDot, styles.dotLg, { bottom: '20%', left: '15%', opacity: 0.35 }]} />
-            <View style={[styles.constellationDot, styles.dotMd, { top: '40%', left: '3%', opacity: 0.3 }]} />
-            <View style={[styles.constellationDot, styles.dotSm, { top: '20%', left: '20%', opacity: 0.4 }]} />
-            <View style={[styles.constellationDot, styles.dotSm, { top: '55%', left: '10%', opacity: 0.3 }]} />
-          </Animated.View>
-
-          {/* Native paginated carousel */}
-          <ScrollView
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onScroll={handleHeroScroll}
-            scrollEventThrottle={100}
-            nestedScrollEnabled
-            style={{ zIndex: 1 }}
-          >
-            {HERO_PHRASES.map((phrase, i) => (
-              <View key={i} style={[styles.heroSlide, { width: HERO_INNER_WIDTH, height: slideHeight }]}>
-                {i === 0 ? (
-                  <View style={styles.heroSlideRow}>
-                    <View style={styles.heroTextArea}>
-                      <Text style={styles.heroTitle}>{phrase.title}</Text>
-                      <Text style={styles.heroSubtitleFirst}>{phrase.subtitle}</Text>
-                    </View>
-                    <Image
-                      source={require('../assets/images/hero-couple.png')}
-                      style={styles.heroImage}
-                      contentFit="contain"
-                      cachePolicy="memory-disk"
-                    />
-                  </View>
-                ) : (
-                  <View style={styles.heroSlideCenter}>
-                    <Text style={styles.heroTitleCentered}>{phrase.title}</Text>
-                    <Text style={styles.heroSubtitleCentered}>{phrase.subtitle}</Text>
-                  </View>
-                )}
-              </View>
-            ))}
-          </ScrollView>
-
-          {/* Dot indicators */}
-          <View style={styles.heroDots}>
-            {HERO_PHRASES.map((_, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.heroDot,
-                  index === heroIndex && styles.heroDotActive,
-                ]}
-              />
-            ))}
+          {/* Simple static hero - first phrase with image */}
+          <View style={styles.heroContent}>
+            <View style={styles.heroTextArea}>
+              <Text style={styles.heroTitle}>{HERO_PHRASES.current[0].title}</Text>
+              <Text style={styles.heroSubtitleFirst}>{HERO_PHRASES.current[0].subtitle}</Text>
+            </View>
+            <Image
+              source={require('../assets/images/hero-couple.png')}
+              style={styles.heroImage}
+              contentFit="contain"
+              cachePolicy="memory-disk"
+            />
           </View>
         </LinearGradient>
       </View>
@@ -1320,7 +1377,9 @@ const LandingScreen: React.FC = () => {
       <TouchableOpacity
         style={styles.categoriesHeader}
         onPress={() => {
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          if (!isWeb) {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          }
           setCategoriesExpanded(prev => !prev);
         }}
         activeOpacity={0.7}
@@ -1335,18 +1394,39 @@ const LandingScreen: React.FC = () => {
         />
       </TouchableOpacity>
       <View style={{ height: categoriesExpanded ? undefined : 0, overflow: 'hidden' }}>
-        {categoryRows.map((row, rowIndex) => (
-          <ScrollView
-            key={rowIndex}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            nestedScrollEnabled
-            contentContainerStyle={styles.categoriesScrollContent}
-            style={rowIndex > 0 ? styles.categoryRowGap : undefined}
-          >
-            {row.map((cat) => renderCategoryItem(cat))}
-          </ScrollView>
-        ))}
+        {isWeb ? (
+          // Web: Grid layout with wrap - show only 12 initially (2 rows of 6)
+          <>
+            <View style={styles.categoriesGrid}>
+              {(showAllCategories ? LANDING_CATEGORIES : LANDING_CATEGORIES.slice(0, 12)).map((cat) => renderCategoryItem(cat))}
+            </View>
+            {LANDING_CATEGORIES.length > 12 && !showAllCategories && (
+              <TouchableOpacity
+                style={styles.showMoreButton}
+                onPress={() => setShowAllCategories(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.showMoreButtonText, { color: theme.colors.accent }]}>
+                  Ver más categorías
+                </Text>
+              </TouchableOpacity>
+            )}
+          </>
+        ) : (
+          // Mobile: Horizontal scroll rows
+          categoryRows.map((row, rowIndex) => (
+            <ScrollView
+              key={rowIndex}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              nestedScrollEnabled
+              contentContainerStyle={styles.categoriesScrollContent}
+              style={rowIndex > 0 ? styles.categoryRowGap : undefined}
+            >
+              {row.map((cat) => renderCategoryItem(cat))}
+            </ScrollView>
+          ))
+        )}
       </View>
     </View>
   );
@@ -1376,24 +1456,9 @@ const LandingScreen: React.FC = () => {
     loadUserCommunities();
   }, []);
 
-  const renderCommunityCategories = () => (
-    <View style={[styles.communityContainer, { backgroundColor: theme.colors.surface }]}>
-      <View style={styles.communityHeader}>
-        <View>
-          <Text style={[styles.categoriesTitle, { color: theme.colors.text }]}>
-            Creadas por la comunidad
-          </Text>
-        </View>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('ExploreCommunities' as any)}>
-          <Text style={[styles.communityViewAll, { color: theme.colors.accent }]}>Ver todas</Text>
-        </TouchableOpacity>
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        nestedScrollEnabled
-        contentContainerStyle={styles.communityScrollContent}
-      >
+  const renderCommunityCategories = () => {
+    const communityContent = (
+      <>
         {/* Comunidades reales creadas por usuarios */}
         {userCreatedCommunities.map((cat) => {
           const color = '#F5B731';
@@ -1466,9 +1531,38 @@ const LandingScreen: React.FC = () => {
             </View>
           </TouchableOpacity>
         ))}
-      </ScrollView>
-    </View>
-  );
+      </>
+    );
+
+    return (
+      <View style={[styles.communityContainer, { backgroundColor: theme.colors.surface }]}>
+        <View style={styles.communityHeader}>
+          <View>
+            <Text style={[styles.categoriesTitle, { color: theme.colors.text }]}>
+              Creadas por la comunidad
+            </Text>
+          </View>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('ExploreCommunities' as any)}>
+            <Text style={[styles.communityViewAll, { color: theme.colors.accent }]}>Ver todas</Text>
+          </TouchableOpacity>
+        </View>
+        {isWeb ? (
+          <View style={styles.communityGrid}>
+            {communityContent}
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled
+            contentContainerStyle={styles.communityScrollContent}
+          >
+            {communityContent}
+          </ScrollView>
+        )}
+      </View>
+    );
+  };
 
   const CAROUSEL_INNER_WIDTH = SCREEN_WIDTH - SPACING.lg * 2;
 
@@ -1491,6 +1585,76 @@ const LandingScreen: React.FC = () => {
   const renderTrendingTopic = () => {
     if (trendingPosts.length === 0) return null;
 
+    const renderTrendingCard = (post: Post, i: number) => {
+      const total = post.agreementCount + post.disagreementCount;
+      const agreePercent = total > 0 ? Math.round((post.agreementCount / total) * 100) : 50;
+      return (
+        <TouchableOpacity
+          key={post.id || i}
+          style={[styles.trendingContainer, isWeb ? styles.trendingContainerWeb : { width: CAROUSEL_INNER_WIDTH }, { backgroundColor: theme.colors.card }]}
+          onPress={() => handlePostPress(post)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.trendingBody}>
+            <View style={styles.trendingLeft}>
+              <View style={styles.trendingHeader}>
+                <Text style={styles.trendingEmoji}>🔥</Text>
+                <Text style={[styles.trendingLabel, { color: theme.colors.textSecondary }]}>
+                  Tema del dia
+                </Text>
+              </View>
+              <Text style={[styles.trendingTitle, { color: theme.colors.text }]} numberOfLines={2}>
+                {post.content}
+              </Text>
+              <View style={styles.trendingStats}>
+                <Text style={[styles.trendingStatText, { color: theme.colors.textSecondary }]}>
+                  {formatNumber(post.agreementCount + post.disagreementCount)} Respuestas
+                </Text>
+                <Text style={[styles.trendingDot, { color: theme.colors.textSecondary }]}>•</Text>
+                <Text style={[styles.trendingStatText, { color: theme.colors.accent }]}>
+                  Debate intenso
+                </Text>
+              </View>
+            </View>
+            {(post.imageUrls?.[0] || post.videoUrl) && (
+              <View style={[styles.cardThumb, { backgroundColor: theme.colors.surface }]}>
+                {post.videoUrl ? (
+                  <Video
+                    source={{ uri: post.videoUrl }}
+                    style={styles.cardThumbMedia}
+                    resizeMode={ResizeMode.COVER}
+                    shouldPlay={!isWeb}
+                    isMuted
+                    isLooping
+                  />
+                ) : (
+                  <Image
+                    source={{ uri: post.imageUrls![0] }}
+                    style={styles.cardThumbMedia}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                  />
+                )}
+              </View>
+            )}
+          </View>
+          <View style={[styles.trendingProgress, { backgroundColor: theme.colors.border }]}>
+            <View style={[styles.trendingProgressBar, { backgroundColor: theme.colors.accent, width: `${agreePercent}%` }]} />
+          </View>
+        </TouchableOpacity>
+      );
+    };
+
+    // Web: show first item only, no carousel
+    if (isWeb) {
+      return (
+        <View style={styles.carouselSectionWeb}>
+          {renderTrendingCard(trendingPosts[0], 0)}
+        </View>
+      );
+    }
+
+    // Mobile: horizontal carousel
     return (
       <View style={styles.carouselSection}>
         <ScrollView
@@ -1502,65 +1666,7 @@ const LandingScreen: React.FC = () => {
           scrollEventThrottle={100}
           style={styles.carouselScroll}
         >
-          {trendingPosts.map((post, i) => {
-            const total = post.agreementCount + post.disagreementCount;
-            const agreePercent = total > 0 ? Math.round((post.agreementCount / total) * 100) : 50;
-            return (
-              <TouchableOpacity
-                key={post.id || i}
-                style={[styles.trendingContainer, { width: CAROUSEL_INNER_WIDTH, backgroundColor: theme.colors.card }]}
-                onPress={() => handlePostPress(post)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.trendingBody}>
-                  <View style={styles.trendingLeft}>
-                    <View style={styles.trendingHeader}>
-                      <Text style={styles.trendingEmoji}>🔥</Text>
-                      <Text style={[styles.trendingLabel, { color: theme.colors.textSecondary }]}>
-                        Tema del dia
-                      </Text>
-                    </View>
-                    <Text style={[styles.trendingTitle, { color: theme.colors.text }]} numberOfLines={2}>
-                      {post.content}
-                    </Text>
-                    <View style={styles.trendingStats}>
-                      <Text style={[styles.trendingStatText, { color: theme.colors.textSecondary }]}>
-                        {formatNumber(post.agreementCount + post.disagreementCount)} Respuestas
-                      </Text>
-                      <Text style={[styles.trendingDot, { color: theme.colors.textSecondary }]}>•</Text>
-                      <Text style={[styles.trendingStatText, { color: theme.colors.accent }]}>
-                        Debate intenso
-                      </Text>
-                    </View>
-                  </View>
-                  {(post.imageUrls?.[0] || post.videoUrl) && (
-                    <View style={[styles.cardThumb, { backgroundColor: theme.colors.surface }]}>
-                      {post.videoUrl ? (
-                        <Video
-                          source={{ uri: post.videoUrl }}
-                          style={styles.cardThumbMedia}
-                          resizeMode={ResizeMode.COVER}
-                          shouldPlay
-                          isMuted
-                          isLooping
-                        />
-                      ) : (
-                        <Image
-                          source={{ uri: post.imageUrls![0] }}
-                          style={styles.cardThumbMedia}
-                          contentFit="cover"
-                          cachePolicy="memory-disk"
-                        />
-                      )}
-                    </View>
-                  )}
-                </View>
-                <View style={[styles.trendingProgress, { backgroundColor: theme.colors.border }]}>
-                  <View style={[styles.trendingProgressBar, { backgroundColor: theme.colors.accent, width: `${agreePercent}%` }]} />
-                </View>
-              </TouchableOpacity>
-            );
-          })}
+          {trendingPosts.map((post, i) => renderTrendingCard(post, i))}
         </ScrollView>
         {trendingPosts.length > 1 && (
           <View style={styles.carouselDots}>
@@ -1583,6 +1689,69 @@ const LandingScreen: React.FC = () => {
   const renderFeaturedOpinion = () => {
     if (featuredPosts.length === 0) return null;
 
+    const renderFeaturedCard = (post: Post, i: number) => (
+      <TouchableOpacity
+        key={post.id || i}
+        style={[styles.featuredContainer, isWeb ? styles.featuredContainerWeb : { width: CAROUSEL_INNER_WIDTH }, { backgroundColor: theme.colors.card, borderColor: theme.colors.accent }]}
+        onPress={() => handlePostPress(post)}
+        activeOpacity={0.8}
+      >
+        <View style={styles.trendingBody}>
+          <View style={styles.trendingLeft}>
+            <View style={styles.featuredHeader}>
+              <Text style={styles.featuredEmoji}>⭐</Text>
+              <Text style={[styles.featuredLabel, { color: theme.colors.text }]}>
+                Opinion destacada
+              </Text>
+            </View>
+            <Text style={[styles.featuredContent, { color: theme.colors.text }]} numberOfLines={3}>
+              {post.content}
+            </Text>
+            <View style={styles.featuredStats}>
+              <Text style={[styles.featuredStatText, { color: theme.colors.textSecondary }]}>
+                {formatNumber(post.agreementCount)} Likes
+              </Text>
+              <Text style={[styles.featuredDot, { color: theme.colors.textSecondary }]}>•</Text>
+              <Text style={[styles.featuredStatText, { color: theme.colors.textSecondary }]}>
+                {formatNumber(post.comments)} Comentarios
+              </Text>
+            </View>
+          </View>
+          {(post.imageUrls?.[0] || post.videoUrl) && (
+            <View style={[styles.cardThumb, { backgroundColor: theme.colors.surface }]}>
+              {post.videoUrl ? (
+                <Video
+                  source={{ uri: post.videoUrl }}
+                  style={styles.cardThumbMedia}
+                  resizeMode={ResizeMode.COVER}
+                  shouldPlay={!isWeb}
+                  isMuted
+                  isLooping
+                />
+              ) : (
+                <Image
+                  source={{ uri: post.imageUrls![0] }}
+                  style={styles.cardThumbMedia}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                />
+              )}
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+
+    // Web: show first item only, no carousel
+    if (isWeb) {
+      return (
+        <View style={styles.carouselSectionWeb}>
+          {renderFeaturedCard(featuredPosts[0], 0)}
+        </View>
+      );
+    }
+
+    // Mobile: horizontal carousel
     return (
       <View style={styles.carouselSection}>
         <ScrollView
@@ -1594,58 +1763,7 @@ const LandingScreen: React.FC = () => {
           scrollEventThrottle={100}
           style={styles.carouselScroll}
         >
-          {featuredPosts.map((post, i) => (
-            <TouchableOpacity
-              key={post.id || i}
-              style={[styles.featuredContainer, { width: CAROUSEL_INNER_WIDTH, backgroundColor: theme.colors.card, borderColor: theme.colors.accent }]}
-              onPress={() => handlePostPress(post)}
-              activeOpacity={0.8}
-            >
-              <View style={styles.trendingBody}>
-                <View style={styles.trendingLeft}>
-                  <View style={styles.featuredHeader}>
-                    <Text style={styles.featuredEmoji}>⭐</Text>
-                    <Text style={[styles.featuredLabel, { color: theme.colors.text }]}>
-                      Opinion destacada
-                    </Text>
-                  </View>
-                  <Text style={[styles.featuredContent, { color: theme.colors.text }]} numberOfLines={3}>
-                    {post.content}
-                  </Text>
-                  <View style={styles.featuredStats}>
-                    <Text style={[styles.featuredStatText, { color: theme.colors.textSecondary }]}>
-                      {formatNumber(post.agreementCount)} Likes
-                    </Text>
-                    <Text style={[styles.featuredDot, { color: theme.colors.textSecondary }]}>•</Text>
-                    <Text style={[styles.featuredStatText, { color: theme.colors.textSecondary }]}>
-                      {formatNumber(post.comments)} Comentarios
-                    </Text>
-                  </View>
-                </View>
-                {(post.imageUrls?.[0] || post.videoUrl) && (
-                  <View style={[styles.cardThumb, { backgroundColor: theme.colors.surface }]}>
-                    {post.videoUrl ? (
-                      <Video
-                        source={{ uri: post.videoUrl }}
-                        style={styles.cardThumbMedia}
-                        resizeMode={ResizeMode.COVER}
-                        shouldPlay
-                        isMuted
-                        isLooping
-                      />
-                    ) : (
-                      <Image
-                        source={{ uri: post.imageUrls![0] }}
-                        style={styles.cardThumbMedia}
-                        contentFit="cover"
-                        cachePolicy="memory-disk"
-                      />
-                    )}
-                  </View>
-                )}
-              </View>
-            </TouchableOpacity>
-          ))}
+          {featuredPosts.map((post, i) => renderFeaturedCard(post, i))}
         </ScrollView>
         {featuredPosts.length > 1 && (
           <View style={styles.carouselDots}>
@@ -1733,7 +1851,7 @@ const LandingScreen: React.FC = () => {
         </>
       )}
     </>
-  ), [theme, trendingPosts, featuredPosts, trendingIndex, featuredIndex, feedPosts.length > 0, userCreatedCommunities, isMember, joiningId, user, heroIndex, renderTabBar, categoriesExpanded]);
+  ), [theme, trendingPosts, featuredPosts, trendingIndex, featuredIndex, feedPosts.length > 0, userCreatedCommunities, isMember, joiningId, user, renderTabBar, categoriesExpanded]);
 
   const renderPostItem = useCallback(({ item }: { item: Post }) => (
     <PostCard
@@ -1817,81 +1935,112 @@ const LandingScreen: React.FC = () => {
       />
 
       {/* Content area wrapper — sticky tabs position relative to this */}
-      <View style={{ flex: 1 }}>
-      <ScrollView
-        ref={tabScrollRef}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        scrollEventThrottle={16}
-        onScroll={handleTabScrollEvent}
-        onMomentumScrollEnd={handleTabScrollEnd}
-        bounces={false}
-        nestedScrollEnabled
-        scrollEnabled={!videoScrubbing}
-        style={{ flex: 1 }}
-      >
-        {/* Page 1: Wall */}
-        <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-          <FlatList
-            ref={flatListRef}
-            data={feedPosts}
-            renderItem={renderPostItem}
-            keyExtractor={(item: Post) => item.id || Math.random().toString()}
-            ListHeaderComponent={listHeader}
-            ListFooterComponent={loadingMore ? (
-              <View style={styles.loadingMore}>
-                <ActivityIndicator size="small" color={theme.colors.accent} />
-              </View>
-            ) : null}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingTop: headerHeight, paddingBottom: insets.bottom + SPACING.xl }}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={theme.colors.accent}
-                colors={[theme.colors.accent]}
-                progressViewOffset={headerHeight}
-              />
-            }
-            onEndReached={loadMorePosts}
-            onEndReachedThreshold={0.5}
-            onScroll={handleFlowScroll}
-            scrollEventThrottle={16}
-            viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
-            removeClippedSubviews
-          />
-        </View>
-
-        {/* Page 2: Weëls */}
-        <View style={{ width: SCREEN_WIDTH, flex: 1, backgroundColor: '#000' }}>
-          {containerHeight > 0 && videoPosts.length > 0 ? (
-            <FlatList
-              ref={hidsListRef}
-              data={videoPosts}
-              renderItem={renderHidItem}
-              keyExtractor={(item: Post) => `hid-${item.id}`}
-              pagingEnabled
-              scrollEnabled={!videoScrubbing}
-              showsVerticalScrollIndicator={false}
-              getItemLayout={hidsGetItemLayout}
-              windowSize={3}
-              maxToRenderPerBatch={2}
-              removeClippedSubviews={Platform.OS !== 'web'}
-              viewabilityConfigCallbackPairs={hidsViewabilityPairs}
-            />
-          ) : (
-            <View style={styles.hidsEmptyState}>
-              <Ionicons name="videocam-outline" size={scale(48)} color="rgba(255,255,255,0.5)" />
-              <Text style={[styles.hidsEmptyTitle, { color: 'white' }]}>No hay hids</Text>
-              <Text style={[styles.hidsEmptySubtitle, { color: 'rgba(255,255,255,0.6)' }]}>
-                Aún no hay videos disponibles
-              </Text>
+      <View style={styles.contentWrapper}>
+      {isWeb ? (
+        // Web: Use native div scrolling for mobile browser compatibility
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            overflowY: 'scroll',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            touchAction: 'pan-y pan-x',
+            paddingTop: headerHeight,
+            paddingBottom: 100,
+          }}
+        >
+          {listHeader}
+          {feedPosts.map((item, index) => (
+            <View key={item.id || index}>
+              {renderPostItem({ item, index })}
+            </View>
+          ))}
+          {loadingMore && (
+            <View style={styles.loadingMore}>
+              <ActivityIndicator size="small" color={theme.colors.accent} />
             </View>
           )}
-        </View>
-      </ScrollView>
+        </div>
+      ) : (
+        // Mobile: Horizontal paging between Wall and Weëls
+        <ScrollView
+          ref={tabScrollRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onScroll={handleTabScrollEvent}
+          onMomentumScrollEnd={handleTabScrollEnd}
+          bounces={false}
+          nestedScrollEnabled
+          scrollEnabled={!videoScrubbing}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ height: '100%' }}
+        >
+          {/* Page 1: Wall */}
+          <View style={{ width: SCREEN_WIDTH, height: '100%' }}>
+            <FlatList
+              ref={flatListRef}
+              data={feedPosts}
+              renderItem={renderPostItem}
+              keyExtractor={(item: Post) => item.id || Math.random().toString()}
+              ListHeaderComponent={listHeader}
+              ListFooterComponent={loadingMore ? (
+                <View style={styles.loadingMore}>
+                  <ActivityIndicator size="small" color={theme.colors.accent} />
+                </View>
+              ) : null}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingTop: headerHeight, paddingBottom: insets.bottom + 80 }}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  tintColor={theme.colors.accent}
+                  colors={[theme.colors.accent]}
+                  progressViewOffset={headerHeight}
+                />
+              }
+              onEndReached={loadMorePosts}
+              onEndReachedThreshold={0.5}
+              onScroll={handleFlowScroll}
+              scrollEventThrottle={16}
+              viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
+              removeClippedSubviews
+            />
+          </View>
+
+          {/* Page 2: Weëls */}
+          <View style={{ width: SCREEN_WIDTH, height: '100%', backgroundColor: '#000' }}>
+            {containerHeight > 0 && videoPosts.length > 0 ? (
+              <FlatList
+                ref={hidsListRef}
+                data={videoPosts}
+                renderItem={renderHidItem}
+                keyExtractor={(item: Post) => `hid-${item.id}`}
+                pagingEnabled
+                scrollEnabled={!videoScrubbing}
+                showsVerticalScrollIndicator={false}
+                getItemLayout={hidsGetItemLayout}
+                windowSize={3}
+                maxToRenderPerBatch={2}
+                removeClippedSubviews
+                viewabilityConfigCallbackPairs={hidsViewabilityPairs}
+              />
+            ) : (
+              <View style={styles.hidsEmptyState}>
+                <Ionicons name="videocam-outline" size={scale(48)} color="rgba(255,255,255,0.5)" />
+                <Text style={[styles.hidsEmptyTitle, { color: 'white' }]}>No hay hids</Text>
+                <Text style={[styles.hidsEmptySubtitle, { color: 'rgba(255,255,255,0.6)' }]}>
+                  Aún no hay videos disponibles
+                </Text>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      )}
 
         {/* Sticky tab bar — cross-fade between normal and transparent */}
         <Animated.View
@@ -1940,6 +2089,16 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  contentWrapper: {
+    flex: 1,
+    overflow: 'hidden',
+  },
+  webFlatList: {
+    flex: 1,
+  },
+  webScrollView: {
+    flex: 1,
+  },
 
   // Hero
   heroWrapper: {
@@ -1947,127 +2106,48 @@ const styles = StyleSheet.create({
     marginTop: SPACING.md,
     borderRadius: BORDER_RADIUS.xl,
     overflow: 'hidden',
-    // Shadow
-    shadowColor: '#6B21A8',
-    shadowOffset: { width: 0, height: scale(8) },
-    shadowOpacity: 0.35,
-    shadowRadius: scale(20),
-    elevation: 12,
   },
   heroContainer: {
     borderRadius: BORDER_RADIUS.xl,
-    height: scale(120),
+    minHeight: scale(120),
     overflow: 'hidden',
   },
-  constellationLayer: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  constellationDot: {
-    position: 'absolute',
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 999,
-  },
-  dotLg: {
-    width: scale(6),
-    height: scale(6),
-  },
-  dotMd: {
-    width: scale(4),
-    height: scale(4),
-  },
-  dotSm: {
-    width: scale(2.5),
-    height: scale(2.5),
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
-  },
-  constellationLine: {
-    position: 'absolute',
-    height: scale(1),
-    backgroundColor: 'rgba(167, 139, 250, 0.5)',
-  },
-  heroSlide: {
-    justifyContent: 'center',
-  },
-  heroSlideRow: {
+  heroContent: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingLeft: SPACING.lg,
-  },
-  heroSlideCenter: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.md,
   },
   heroTextArea: {
     flex: 1,
-    paddingRight: SPACING.sm,
+    paddingRight: SPACING.md,
+    zIndex: 1,
   },
   heroImage: {
-    position: 'absolute',
-    right: scale(2),
-    bottom: -scale(13),
-    width: scale(130),
-    height: scale(130),
+    width: scale(110),
+    height: scale(110),
+    marginRight: SPACING.sm,
   },
   heroTitle: {
-    fontSize: scale(16),
+    fontSize: scale(18),
     fontWeight: FONT_WEIGHT.bold,
     color: 'white',
-    marginBottom: scale(4),
-    letterSpacing: -0.3,
-  },
-  heroTitleCentered: {
-    fontSize: scale(20),
-    fontWeight: FONT_WEIGHT.bold,
-    color: 'white',
-    textAlign: 'center',
-    marginBottom: scale(4),
+    marginBottom: scale(6),
     letterSpacing: -0.3,
   },
   heroSubtitleFirst: {
-    fontSize: scale(11),
-    color: 'rgba(255,255,255,0.7)',
-    letterSpacing: scale(1),
-    marginTop: scale(2),
-  },
-  heroSubtitle: {
-    fontSize: scale(10),
-    color: 'rgba(255,255,255,0.8)',
-    lineHeight: scale(14),
-  },
-  heroSubtitleCentered: {
     fontSize: scale(12),
-    color: 'rgba(255,255,255,0.8)',
-    textAlign: 'center',
-    lineHeight: scale(16),
-  },
-  heroDots: {
-    position: 'absolute',
-    bottom: scale(6),
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: scale(5),
-    zIndex: 2,
-  },
-  heroDot: {
-    width: scale(6),
-    height: scale(6),
-    borderRadius: scale(3),
-    backgroundColor: 'rgba(255,255,255,0.3)',
-  },
-  heroDotActive: {
-    backgroundColor: 'white',
-    width: scale(18),
+    color: 'rgba(255,255,255,0.85)',
+    letterSpacing: scale(0.5),
   },
 
   // Categories
   categoriesContainer: {
     marginTop: SPACING.lg,
     paddingVertical: SPACING.lg,
+    overflow: 'hidden',
   },
   categoriesHeader: {
     flexDirection: 'row',
@@ -2083,6 +2163,22 @@ const styles = StyleSheet.create({
   categoriesScrollContent: {
     paddingHorizontal: SPACING.lg,
     gap: SPACING.sm,
+  },
+  categoriesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: SPACING.lg,
+    gap: SPACING.sm,
+    justifyContent: 'center',
+  },
+  showMoreButton: {
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+    marginTop: SPACING.sm,
+  },
+  showMoreButtonText: {
+    fontSize: FONT_SIZE.base,
+    fontWeight: FONT_WEIGHT.medium,
   },
   categoryRowGap: {
     marginTop: SPACING.sm,
@@ -2140,6 +2236,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     gap: SPACING.sm,
   },
+  communityGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: SPACING.lg,
+    gap: SPACING.sm,
+    justifyContent: 'center',
+  },
   communityChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2186,6 +2289,10 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg,
     marginHorizontal: SPACING.lg,
   },
+  carouselSectionWeb: {
+    marginTop: SPACING.lg,
+    paddingHorizontal: SPACING.lg,
+  },
   carouselScroll: {
   },
   carouselDots: {
@@ -2207,6 +2314,9 @@ const styles = StyleSheet.create({
   trendingContainer: {
     padding: SPACING.lg,
     borderRadius: BORDER_RADIUS.lg,
+  },
+  trendingContainerWeb: {
+    width: '100%',
   },
   trendingBody: {
     flexDirection: 'row',
@@ -2271,6 +2381,9 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     borderRadius: BORDER_RADIUS.lg,
     borderLeftWidth: scale(4),
+  },
+  featuredContainerWeb: {
+    width: '100%',
   },
   featuredHeader: {
     flexDirection: 'row',

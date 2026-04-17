@@ -1,13 +1,43 @@
 import React from 'react';
-import { View, Animated, StyleSheet } from 'react-native';
+import { View, Animated, StyleSheet, Platform } from 'react-native';
 import { BottomTabBarProps, BottomTabBar } from '@react-navigation/bottom-tabs';
 import { useTabBar } from '../contexts/TabBarContext';
 import { useTheme } from '../contexts/ThemeContext';
+
+const isWeb = Platform.OS === 'web';
 
 const CustomTabBar: React.FC<BottomTabBarProps> = (props) => {
   const { scrollProgress, isTransparent } = useTabBar();
   const { theme } = useTheme();
 
+  // Solid layer: solid bg, normal icons
+  const makeSolidDescs = () => {
+    const descs = { ...props.descriptors };
+    for (const key of Object.keys(descs)) {
+      const d = descs[key];
+      const baseStyle = typeof d.options.tabBarStyle === 'object' ? d.options.tabBarStyle : {};
+      descs[key] = {
+        ...d,
+        options: {
+          ...d.options,
+          tabBarStyle: {
+            ...baseStyle,
+            backgroundColor: theme.dark ? '#1C1C1E' : '#FFFFFF',
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+          },
+        },
+      };
+    }
+    return descs;
+  };
+
+  // Web: simple solid tab bar without animations
+  if (isWeb) {
+    return <BottomTabBar {...props} descriptors={makeSolidDescs()} />;
+  }
+
+  // Mobile: animated tab bar with transparency transitions
   // Normal (Wall): opacity 1→0
   const normalOpacity = scrollProgress.interpolate({
     inputRange: [0, 0.5],
@@ -35,28 +65,6 @@ const CustomTabBar: React.FC<BottomTabBarProps> = (props) => {
           tabBarStyle: { ...baseStyle, backgroundColor: 'transparent', borderTopWidth: 0 },
           tabBarActiveTintColor: 'white',
           tabBarInactiveTintColor: 'rgba(255,255,255,0.5)',
-        },
-      };
-    }
-    return descs;
-  };
-
-  // Solid layer: solid bg, normal icons
-  const makeSolidDescs = () => {
-    const descs = { ...props.descriptors };
-    for (const key of Object.keys(descs)) {
-      const d = descs[key];
-      const baseStyle = typeof d.options.tabBarStyle === 'object' ? d.options.tabBarStyle : {};
-      descs[key] = {
-        ...d,
-        options: {
-          ...d.options,
-          tabBarStyle: {
-            ...baseStyle,
-            backgroundColor: theme.dark ? '#1C1C1E' : '#FFFFFF',
-            borderTopWidth: StyleSheet.hairlineWidth,
-            borderTopColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-          },
         },
       };
     }

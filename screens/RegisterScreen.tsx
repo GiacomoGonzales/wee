@@ -106,11 +106,12 @@ const RegisterScreen: React.FC = () => {
     setLoading(true);
     try {
       await signInWithGoogle();
-      // NO poner loading = false aquí, mantener el spinner hasta que la redirección ocurra
+      // Login exitoso
     } catch (error: any) {
-      // Solo en caso de error, volver a mostrar el formulario
-      setLoading(false);
       Alert.alert('Error', 'Error al registrarse con Google: ' + error.message);
+    } finally {
+      // Siempre resetear el loading
+      setLoading(false);
     }
   };
 
@@ -118,11 +119,12 @@ const RegisterScreen: React.FC = () => {
     setLoading(true);
     try {
       await signInAnonymously();
-      // NO poner loading = false aquí, mantener el spinner hasta que la redirección ocurra
+      // Login exitoso
     } catch (error: any) {
-      // Solo en caso de error, volver a mostrar el formulario
-      setLoading(false);
       Alert.alert('Error', 'Error al acceder de forma anónima: ' + error.message);
+    } finally {
+      // Siempre resetear el loading
+      setLoading(false);
     }
   };
 

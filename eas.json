@@ -20,7 +20,8 @@
         "buildType": "apk"
       },
       "ios": {
-        "simulator": false
+        "simulator": false,
+        "resourceClass": "m-medium"
       }
     },
     "production": {
@@ -35,8 +36,8 @@
   "submit": {
     "production": {
       "ios": {
-        "appleId": "YOUR_APPLE_ID@email.com",
-        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID"
+        "appleId": "giiacomo@gmail.com",
+        "ascAppId": "6762245333"
       }
     }
   }

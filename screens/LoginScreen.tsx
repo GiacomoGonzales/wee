@@ -78,19 +78,20 @@ const LoginScreen: React.FC = () => {
     setLoading(true);
     try {
       await signInWithGoogle();
+      // Login exitoso - cerrar el modal
       if (navigation.canGoBack()) {
         navigation.goBack();
       }
     } catch (error: any) {
-      // Solo en caso de error, volver a mostrar el formulario
-      setLoading(false);
-
       const message = 'Error al iniciar sesión con Google: ' + error.message;
       if (Platform.OS === 'web') {
         alert(message);
       } else {
         Alert.alert('Error', message);
       }
+    } finally {
+      // Siempre resetear el loading
+      setLoading(false);
     }
   };
 
@@ -362,6 +363,7 @@ const styles = StyleSheet.create({
     color: '#FFF',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } as any : {}),
   },
   passwordContainer: {
     flexDirection: 'row',
@@ -376,6 +378,7 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 14,
     color: '#FFF',
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } as any : {}),
   },
   eyeButton: {
     padding: 12,

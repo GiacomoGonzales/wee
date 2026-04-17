@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, StatusBar, Text } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, StatusBar, Text, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -11,6 +11,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { notificationService } from '../services/notificationService';
 import { SPACING, ICON_SIZE, FONT_SIZE, FONT_WEIGHT, BORDER_RADIUS } from '../constants/design';
 import { scale } from '../utils/scale';
+
+const isWeb = Platform.OS === 'web';
+
+// Emoji fallbacks for web icons
+const WEB_ICONS: Record<string, string> = {
+  'arrow-back': '←',
+  'menu-outline': '☰',
+  'notifications': '🔔',
+  'notifications-outline': '🔔',
+  'eye': '👁️',
+  'eye-off': '🙈',
+  'storefront': '🏪',
+};
 
 interface HeaderProps {
   onNotificationsPress?: () => void;
@@ -102,11 +115,19 @@ const Header: React.FC<HeaderProps> = ({ onNotificationsPress, onMenuPress, onBa
             {/* Back or hamburger menu */}
             {onBackPress ? (
               <TouchableOpacity onPress={onBackPress} activeOpacity={0.7} style={styles.menuButton}>
-                <Ionicons name="arrow-back" size={scale(23)} color={textColor} />
+                {isWeb ? (
+                  <Text style={{ fontSize: 20, color: textColor }}>←</Text>
+                ) : (
+                  <Ionicons name="arrow-back" size={scale(23)} color={textColor} />
+                )}
               </TouchableOpacity>
             ) : onMenuPress ? (
               <TouchableOpacity onPress={onMenuPress} activeOpacity={0.7} style={styles.menuButton}>
-                <Ionicons name="menu-outline" size={scale(23)} color={textColor} />
+                {isWeb ? (
+                  <Text style={{ fontSize: 20, color: textColor }}>☰</Text>
+                ) : (
+                  <Ionicons name="menu-outline" size={scale(23)} color={textColor} />
+                )}
               </TouchableOpacity>
             ) : null}
 
@@ -142,11 +163,17 @@ const Header: React.FC<HeaderProps> = ({ onNotificationsPress, onMenuPress, onBa
                 onPress={handleSwitchIdentity}
                 activeOpacity={0.7}
               >
-                <Ionicons
-                  name={activeProfileType === 'biz' ? 'storefront' : (activeProfileType === 'hidi' ? 'eye-off' : 'eye')}
-                  size={ICON_SIZE.md}
-                  color={transparent ? 'white' : (activeProfileType === 'biz' ? '#7C3AED' : activeProfileType === 'hidi' ? theme.colors.accent : textColor)}
-                />
+                {isWeb ? (
+                  <Text style={{ fontSize: 14 }}>
+                    {activeProfileType === 'biz' ? '🏪' : activeProfileType === 'hidi' ? '🙈' : '👁️'}
+                  </Text>
+                ) : (
+                  <Ionicons
+                    name={activeProfileType === 'biz' ? 'storefront' : (activeProfileType === 'hidi' ? 'eye-off' : 'eye')}
+                    size={ICON_SIZE.md}
+                    color={transparent ? 'white' : (activeProfileType === 'biz' ? '#7C3AED' : activeProfileType === 'hidi' ? theme.colors.accent : textColor)}
+                  />
+                )}
                 <Text style={[styles.switchButtonText, {
                   color: transparent ? 'white' : (activeProfileType === 'biz' ? '#7C3AED' : activeProfileType === 'hidi' ? theme.colors.accent : textColor),
                 }]}>
@@ -163,11 +190,17 @@ const Header: React.FC<HeaderProps> = ({ onNotificationsPress, onMenuPress, onBa
                 activeOpacity={0.7}
               >
                 <View>
-                  <Ionicons
-                    name={unreadCount > 0 ? "notifications" : "notifications-outline"}
-                    size={ICON_SIZE.lg}
-                    color={transparent ? 'white' : (unreadCount > 0 ? theme.colors.accent : theme.colors.text)}
-                  />
+                  {isWeb ? (
+                    <Text style={{ fontSize: 22, color: transparent ? 'white' : (unreadCount > 0 ? theme.colors.accent : theme.colors.text) }}>
+                      🔔
+                    </Text>
+                  ) : (
+                    <Ionicons
+                      name={unreadCount > 0 ? "notifications" : "notifications-outline"}
+                      size={ICON_SIZE.lg}
+                      color={transparent ? 'white' : (unreadCount > 0 ? theme.colors.accent : theme.colors.text)}
+                    />
+                  )}
                   {unreadCount > 0 && (
                     <View style={[styles.badge, { backgroundColor: theme.colors.accent }]}>
                       <Text style={styles.badgeText}>

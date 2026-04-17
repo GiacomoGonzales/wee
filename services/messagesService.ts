@@ -59,7 +59,9 @@ export interface Conversation {
   updatedAt: Timestamp;
   ephemeral?: boolean;             // vanish mode active
   activeInChat?: string[];         // user IDs currently viewing the conversation
-  bubbleColors?: { [userId: string]: string };  // per-user bubble colors
+  bubbleColors?: { [userId: string]: string };  // per-user bubble colors (legacy)
+  chatTheme?: string;              // shared chat theme ID
+  chatWallpaper?: string;          // custom wallpaper URL
 }
 
 class MessagesService {
@@ -304,7 +306,7 @@ class MessagesService {
   }
 
   /**
-   * Set bubble color for a conversation
+   * Set bubble color for a conversation (legacy)
    */
   async setBubbleColor(conversationId: string, userId: string, color: string): Promise<void> {
     try {
@@ -312,6 +314,30 @@ class MessagesService {
       await updateDoc(convRef, { [`bubbleColors.${userId}`]: color });
     } catch (error) {
       console.error('Error setting bubble color:', error);
+    }
+  }
+
+  /**
+   * Set chat theme for a conversation (shared between both users)
+   */
+  async setChatTheme(conversationId: string, themeId: string): Promise<void> {
+    try {
+      const convRef = doc(db, 'conversations', conversationId);
+      await updateDoc(convRef, { chatTheme: themeId });
+    } catch (error) {
+      console.error('Error setting chat theme:', error);
+    }
+  }
+
+  /**
+   * Set custom wallpaper for a conversation
+   */
+  async setChatWallpaper(conversationId: string, wallpaperUrl: string | null): Promise<void> {
+    try {
+      const convRef = doc(db, 'conversations', conversationId);
+      await updateDoc(convRef, { chatWallpaper: wallpaperUrl });
+    } catch (error) {
+      console.error('Error setting chat wallpaper:', error);
     }
   }
 

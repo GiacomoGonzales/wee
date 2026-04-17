@@ -13,6 +13,8 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Dimensions,
+  Share,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,18 +24,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useUserProfile } from '../contexts/UserProfileContext';
-import { uploadProfileImageFromUri } from '../services/storageService';
+import { uploadProfileImageFromUri, uploadBannerImageFromUri } from '../services/storageService';
 import { postsService, Post, repostsService } from '../services/firestoreService';
-import { likesService } from '../services/likesService';
+import { voteService } from '../services/voteService';
 import { formatNumber } from '../data/mockData';
 import { ProfileStackParamList } from '../navigation/ProfileStackNavigator';
-import Header from '../components/Header';
 import DrawerMenu from '../components/DrawerMenu';
 import AvatarPicker, { isDiceBearUrl } from '../components/avatars/AvatarPicker';
 import AvatarDisplay from '../components/avatars/AvatarDisplay';
 import PostCard from '../components/PostCard';
 import ImageViewer from '../components/ImageViewer';
 import { useResponsive } from '../hooks/useResponsive';
+import * as ImagePicker from 'expo-image-picker';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const BANNER_HEIGHT = 180;
 
 type ProfileScreenNavigationProp = StackNavigationProp<ProfileStackParamList, 'ProfileMain'>;
 
@@ -56,11 +61,14 @@ const ProfileScreen: React.FC = () => {
   const [userLikedPosts, setUserLikedPosts] = useState<Post[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [postsError, setPostsError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'posts' | 'reposts' | 'photos' | 'polls' | 'likes'>('posts');
+  const [activeTab, setActiveTab] = useState<'posts' | 'media' | 'reposts' | 'likes'>('posts');
   const [showAvatarViewer, setShowAvatarViewer] = useState(false);
+  const [showBannerViewer, setShowBannerViewer] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const currentScrollPosition = useRef(0);
   const [drawerVisible, setDrawerVisible] = useState(false);
+  const [showEditDropdown, setShowEditDropdown] = useState(false);
 
   useEffect(() => {
     const keyboardWillShowListener = Keyboard.addListener(
@@ -93,17 +101,20 @@ const ProfileScreen: React.FC = () => {
       if (!user || !userProfile) return;
 
       const activeUid = userProfile.uid;
+      // Los likes siempre se guardan con user.uid (no el perfil activo)
+      const authUid = user.uid;
 
       try {
         setLoadingPosts(true);
         setPostsError(null);
         console.log('🔍 Cargando posts del usuario:', activeUid);
+        console.log('🔍 Cargando likes del auth uid:', authUid);
 
-        // Cargar posts, reposts y liked posts en paralelo
+        // Cargar posts y reposts con el perfil activo, pero likes con el auth uid
         const [posts, reposts, likedPosts] = await Promise.all([
           postsService.getByUserId(activeUid),
           repostsService.getUserReposts(activeUid),
-          likesService.getUserLikedPostsWithData(activeUid)
+          voteService.getUserAgreedPosts(authUid) // Usar voteService para obtener posts con "agree"
         ]);
 
         console.log('📋 Posts encontrados:', posts.length);
@@ -169,15 +180,16 @@ const ProfileScreen: React.FC = () => {
     if (!user || !userProfile) return;
 
     const activeUid = userProfile.uid;
+    const authUid = user.uid;
 
     try {
       setLoadingPosts(true);
 
-      // Cargar posts, reposts y liked posts en paralelo
+      // Cargar posts y reposts con perfil activo, likes con auth uid
       const [posts, reposts, likedPosts] = await Promise.all([
         postsService.getByUserId(activeUid),
         repostsService.getUserReposts(activeUid),
-        likesService.getUserLikedPostsWithData(activeUid)
+        voteService.getUserAgreedPosts(authUid)
       ]);
 
       setUserPosts(posts);
@@ -383,17 +395,58 @@ const ProfileScreen: React.FC = () => {
     }
   };
 
+  // Seleccionar y subir banner
+  const handleBannerSelect = async () => {
+    if (!user || !userProfile?.id) return;
+
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permisos', 'Se necesitan permisos para acceder a la galería');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets[0]) return;
+
+      setUploadingBanner(true);
+      const { fullSize } = await uploadBannerImageFromUri(result.assets[0].uri, user.uid);
+      await updateProfile({ bannerURL: fullSize });
+    } catch (error) {
+      console.error('Error uploading banner:', error);
+      Alert.alert('Error', 'No se pudo subir la imagen de portada');
+    } finally {
+      setUploadingBanner(false);
+    }
+  };
+
+  // Compartir perfil
+  const handleShareProfile = async () => {
+    try {
+      await Share.share({
+        message: `Mira el perfil de ${userProfile?.displayName} en Weë`,
+        // url: `https://wee.zone/u/${userProfile?.username || userProfile?.uid}`,
+      });
+    } catch (error) {
+      console.error('Error sharing profile:', error);
+    }
+  };
+
   // Función para filtrar posts según la pestaña activa
   const getFilteredPosts = () => {
     switch (activeTab) {
       case 'posts':
         return userPosts;
+      case 'media':
+        return userPosts.filter(post => (post.imageUrls && post.imageUrls.length > 0) || post.videoUrl);
       case 'reposts':
         return userReposts;
-      case 'photos':
-        return userPosts.filter(post => (post.imageUrls && post.imageUrls.length > 0) || post.videoUrl);
-      case 'polls':
-        return userPosts.filter(post => post.poll);
       case 'likes':
         return userLikedPosts;
       default:
@@ -402,23 +455,17 @@ const ProfileScreen: React.FC = () => {
   };
 
   const renderTabButton = (
-    tab: 'posts' | 'reposts' | 'photos' | 'polls' | 'likes',
-    icon: string,
+    tab: 'posts' | 'media' | 'reposts' | 'likes',
     label: string
   ) => (
     <TouchableOpacity
       style={[
         styles.tabButton,
-        activeTab === tab && { borderBottomColor: theme.colors.accent, borderBottomWidth: 2 }
+        activeTab === tab && styles.tabButtonActive
       ]}
       onPress={() => setActiveTab(tab)}
       activeOpacity={0.7}
     >
-      <Ionicons
-        name={icon as any}
-        size={20}
-        color={activeTab === tab ? theme.colors.accent : theme.colors.textSecondary}
-      />
       <Text
         style={[
           styles.tabLabel,
@@ -571,86 +618,116 @@ const ProfileScreen: React.FC = () => {
           currentScrollPosition.current = event.nativeEvent.contentOffset.y;
         }}
         scrollEventThrottle={16}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
       >
-          {/* Header principal - solo en móvil */}
-          {!isDesktop && (
-            <Header
-              onNotificationsPress={handleNotificationsPress}
-              onMenuPress={() => setDrawerVisible(true)}
+        {/* Banner/Cover Image */}
+        <TouchableOpacity
+          style={styles.bannerContainer}
+          onPress={handleBannerSelect}
+          onLongPress={() => userProfile?.bannerURL && setShowBannerViewer(true)}
+          activeOpacity={0.9}
+        >
+          {uploadingBanner ? (
+            <View style={[styles.bannerLoading, { backgroundColor: theme.colors.surface }]}>
+              <ActivityIndicator size="large" color={theme.colors.accent} />
+            </View>
+          ) : userProfile?.bannerURL ? (
+            <Image
+              source={{ uri: userProfile.bannerURL }}
+              style={styles.bannerImage}
+              contentFit="cover"
             />
+          ) : (
+            <View style={[styles.bannerPlaceholder, { backgroundColor: theme.colors.surface }]}>
+              <Ionicons name="camera-outline" size={32} color={theme.colors.textSecondary} />
+              <Text style={[styles.bannerPlaceholderText, { color: theme.colors.textSecondary }]}>
+                Agregar portada
+              </Text>
+            </View>
           )}
+
+          {/* Header flotante sobre el banner */}
+          <View style={[styles.floatingHeader, { paddingTop: insets.top + 8 }]}>
+            <TouchableOpacity
+              style={[styles.floatingHeaderBtn, { backgroundColor: 'rgba(0,0,0,0.4)' }]}
+              onPress={() => setDrawerVisible(true)}
+            >
+              <Ionicons name="menu" size={22} color="#fff" />
+            </TouchableOpacity>
+            <View style={styles.floatingHeaderRight}>
+              <TouchableOpacity
+                style={[styles.floatingHeaderBtn, { backgroundColor: 'rgba(0,0,0,0.4)' }]}
+                onPress={handleSettingsPress}
+              >
+                <Ionicons name="settings-outline" size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        {/* Avatar superpuesto al banner */}
+        <View style={styles.avatarOverlapContainer}>
+          <TouchableOpacity
+            style={[styles.avatarWrapper, { borderColor: theme.colors.background }]}
+            onLongPress={handleAvatarLongPress}
+            delayLongPress={300}
+            activeOpacity={0.9}
+          >
+            {uploadingAvatar ? (
+              <View style={[styles.avatarLoadingContainer, { backgroundColor: theme.colors.surface }]}>
+                <ActivityIndicator size="large" color={theme.colors.accent} />
+              </View>
+            ) : (
+              <AvatarPicker
+                currentAvatar={typeof userProfile.photoURL === 'string' ? userProfile.photoURL : undefined}
+                currentAvatarType={userProfile.avatarType}
+                currentAvatarId={userProfile.avatarId}
+                onAvatarSelect={handleAvatarSelect}
+                size={90}
+                isHidiProfile={activeProfileType === 'hidi'}
+                onNavigateAiAvatar={() => (navigation as any).navigate('AiAvatar')}
+              />
+            )}
+          </TouchableOpacity>
+        </View>
 
         {/* Información del perfil */}
         <View style={styles.profileInfo}>
-          {/* Avatar centrado */}
-          <View style={styles.avatarSection}>
-            <TouchableOpacity
-              style={styles.avatarContainer}
-              onLongPress={handleAvatarLongPress}
-              delayLongPress={300}
-              activeOpacity={0.9}
-            >
-              {uploadingAvatar ? (
-                <View style={[styles.avatarLoadingContainer, { backgroundColor: theme.colors.surface }]}>
-                  <ActivityIndicator size="large" color={theme.colors.accent} />
-                </View>
-              ) : (
-                <AvatarPicker
-                  currentAvatar={typeof userProfile.photoURL === 'string' ? userProfile.photoURL : undefined}
-                  currentAvatarType={userProfile.avatarType}
-                  currentAvatarId={userProfile.avatarId}
-                  onAvatarSelect={handleAvatarSelect}
-                  size={100}
-                  isHidiProfile={activeProfileType === 'hidi'}
-                  onNavigateAiAvatar={() => (navigation as any).navigate('AiAvatar')}
-                />
-              )}
-            </TouchableOpacity>
-          </View>
-
           {/* Nombre */}
           <Text style={[styles.displayName, { color: theme.colors.text }]}>
             {userProfile.displayName}
           </Text>
 
-          {/* Badge de tipo de perfil - toca para cambiar */}
-          {hasHidiProfile && (
+          {/* Handle/Username con badge verificado */}
+          <View style={styles.handleContainer}>
             <TouchableOpacity
-              style={[styles.profileTypeBadge, {
+              style={[styles.handleBadge, {
                 backgroundColor: activeProfileType === 'hidi' ? theme.colors.accent + '20' : theme.colors.surface,
-                borderColor: activeProfileType === 'hidi' ? theme.colors.accent : theme.colors.border,
               }]}
               onPress={() => {
-                switchIdentity();
-                const nextType = activeProfileType === 'real' ? 'hidi' : 'real';
-                setThemeMode(nextType === 'hidi' ? 'dark' : 'light');
+                if (hasHidiProfile) {
+                  switchIdentity();
+                  const nextType = activeProfileType === 'real' ? 'hidi' : 'real';
+                  setThemeMode(nextType === 'hidi' ? 'dark' : 'light');
+                }
               }}
-              activeOpacity={0.7}
+              activeOpacity={hasHidiProfile ? 0.7 : 1}
             >
               <Ionicons
                 name={activeProfileType === 'hidi' ? 'eye-off' : 'eye'}
                 size={14}
                 color={activeProfileType === 'hidi' ? theme.colors.accent : theme.colors.textSecondary}
               />
-              <Text style={[styles.profileTypeBadgeText, {
+              <Text style={[styles.handleText, {
                 color: activeProfileType === 'hidi' ? theme.colors.accent : theme.colors.textSecondary,
               }]}>
-                Perfil {activeProfileType === 'hidi' ? 'Weë' : 'Real'}
+                {userProfile.username || userProfile.displayName.toLowerCase().replace(/\s+/g, '')}
               </Text>
-              <Ionicons
-                name="swap-horizontal"
-                size={12}
-                color={activeProfileType === 'hidi' ? theme.colors.accent : theme.colors.textSecondary}
-              />
+              {userProfile.verified && (
+                <Ionicons name="checkmark-circle" size={16} color={theme.colors.accent} />
+              )}
             </TouchableOpacity>
-          )}
-
-          {/* Badge anónimo */}
-          {user?.isAnonymous && (
-            <Text style={[styles.anonymousBadge, { color: theme.colors.textSecondary }]}>
-              👤 Usuario Anónimo
-            </Text>
-          )}
+          </View>
 
           {/* Bio */}
           {userProfile.bio ? (
@@ -659,78 +736,50 @@ const ProfileScreen: React.FC = () => {
             </Text>
           ) : null}
 
-          {/* Info adicional inline */}
-          <View style={styles.infoSection}>
-            {userProfile.website && (
-              <TouchableOpacity
-                style={styles.infoRow}
-                onPress={() => {
-                  let url = userProfile.website!.trim();
-                  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-                  Linking.openURL(url).catch(() =>
-                    Alert.alert('Error', 'No se pudo abrir el enlace')
-                  );
-                }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="link-outline" size={14} color={theme.colors.accent} />
-                <Text style={[styles.infoText, { color: theme.colors.accent }]} numberOfLines={1}>
-                  {userProfile.website}
-                </Text>
-              </TouchableOpacity>
-            )}
-            <View style={styles.infoRow}>
-              <Ionicons name="calendar-outline" size={14} color={theme.colors.textSecondary} />
-              <Text style={[styles.infoText, { color: theme.colors.textSecondary }]}>
-                {userProfile.createdAt.toDate().toLocaleDateString('es-ES', { month: 'short', year: 'numeric' })}
-              </Text>
-            </View>
-          </View>
-
-          {/* Estadísticas */}
-          <View style={styles.statsSection}>
-            <TouchableOpacity style={styles.stat} activeOpacity={0.7}>
+          {/* Estadísticas horizontales */}
+          <View style={styles.statsRow}>
+            <TouchableOpacity style={styles.statItem} activeOpacity={0.7}>
               <Text style={[styles.statNumber, { color: theme.colors.text }]}>
                 {formatNumber(userProfile.posts)}
               </Text>
               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Posts</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.stat} activeOpacity={0.7}>
+            <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
+            <TouchableOpacity style={styles.statItem} activeOpacity={0.7}>
               <Text style={[styles.statNumber, { color: theme.colors.text }]}>
                 {formatNumber(userProfile.followers)}
               </Text>
               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Seguidores</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.stat} activeOpacity={0.7}>
+            <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
+            <TouchableOpacity style={styles.statItem} activeOpacity={0.7}>
               <Text style={[styles.statNumber, { color: theme.colors.text }]}>
                 {formatNumber(userProfile.following)}
               </Text>
               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Siguiendo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.stat}
-              activeOpacity={0.7}
-              onPress={() => (navigation as any).navigate('CommunitiesManagement')}
-            >
-              <Text style={[styles.statNumber, { color: theme.colors.text }]}>
-                {formatNumber(userProfile.joinedCommunities?.length || 0)}
-              </Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Comunidades</Text>
             </TouchableOpacity>
           </View>
 
           {/* Botones de acción */}
           <View style={styles.actionButtons}>
             <TouchableOpacity
-              style={[styles.editButton, { backgroundColor: theme.colors.accent }]}
+              style={[styles.editButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
               onPress={handleEditProfile}
               activeOpacity={0.8}
             >
-              <Ionicons name="create-outline" size={18} color="white" />
-              <Text style={styles.editButtonText}>Editar perfil</Text>
+              <Text style={[styles.editButtonText, { color: theme.colors.text }]}>Editar perfil</Text>
+              <Ionicons name="chevron-down" size={16} color={theme.colors.text} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.settingsButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+              style={[styles.shareButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+              onPress={handleShareProfile}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="arrow-redo-outline" size={18} color={theme.colors.text} />
+              <Text style={[styles.shareButtonText, { color: theme.colors.text }]}>Compartir</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.settingsIconButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
               onPress={handleSettingsPress}
               activeOpacity={0.8}
             >
@@ -740,28 +789,25 @@ const ProfileScreen: React.FC = () => {
 
           {/* Botón Crear perfil Weë - solo si no existe */}
           {!hasHidiProfile && activeProfileType === 'real' && (
-            <View style={styles.hidiButtonContainer}>
-              <TouchableOpacity
-                style={[styles.hidiButton, { borderColor: theme.colors.accent }]}
-                onPress={() => (navigation as any).navigate('HidiCreation')}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="eye-off-outline" size={18} color={theme.colors.accent} />
-                <Text style={[styles.hidiButtonText, { color: theme.colors.accent }]}>
-                  Crear perfil Weë
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={[styles.hidiButton, { borderColor: theme.colors.accent }]}
+              onPress={() => (navigation as any).navigate('HidiCreation')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="eye-off-outline" size={18} color={theme.colors.accent} />
+              <Text style={[styles.hidiButtonText, { color: theme.colors.accent }]}>
+                Crear perfil Weë
+              </Text>
+            </TouchableOpacity>
           )}
         </View>
 
-        {/* Tabs de filtros */}
+        {/* Tabs de filtros simplificados */}
         <View style={[styles.tabsContainer, { borderBottomColor: theme.colors.border }]}>
-          {renderTabButton('posts', 'document-text-outline', 'Posts')}
-          {renderTabButton('reposts', 'repeat-outline', 'Repost')}
-          {renderTabButton('photos', 'image-outline', 'Multimedia')}
-          {renderTabButton('polls', 'stats-chart-outline', 'Encuestas')}
-          {renderTabButton('likes', 'heart-outline', 'Me gusta')}
+          {renderTabButton('posts', 'Posts')}
+          {renderTabButton('media', 'Media')}
+          {renderTabButton('reposts', 'Reposts')}
+          {renderTabButton('likes', 'Likes')}
         </View>
 
         {/* Posts filtrados */}
@@ -818,9 +864,8 @@ const ProfileScreen: React.FC = () => {
               <Ionicons
                 name={
                   activeTab === 'posts' ? 'document-text-outline' :
+                  activeTab === 'media' ? 'image-outline' :
                   activeTab === 'reposts' ? 'repeat-outline' :
-                  activeTab === 'photos' ? 'image-outline' :
-                  activeTab === 'polls' ? 'stats-chart-outline' :
                   'heart-outline'
                 }
                 size={48}
@@ -829,18 +874,16 @@ const ProfileScreen: React.FC = () => {
               <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
                 {
                   activeTab === 'posts' ? 'Aún no tienes publicaciones' :
+                  activeTab === 'media' ? 'No tienes publicaciones con multimedia' :
                   activeTab === 'reposts' ? 'No has reposteado nada' :
-                  activeTab === 'photos' ? 'No tienes publicaciones con multimedia' :
-                  activeTab === 'polls' ? 'No tienes publicaciones con encuestas' :
                   'No tienes publicaciones que te gusten'
                 }
               </Text>
               <Text style={[styles.emptySubtext, { color: theme.colors.textSecondary }]}>
                 {
-                  activeTab === 'posts' ? '¡Comparte tu primer post anónimo!' :
+                  activeTab === 'posts' ? '¡Comparte tu primer post!' :
+                  activeTab === 'media' ? 'Crea un post con fotos o videos' :
                   activeTab === 'reposts' ? 'Comparte contenido de otros usuarios' :
-                  activeTab === 'photos' ? 'Crea un post con fotos o videos' :
-                  activeTab === 'polls' ? 'Crea una encuesta' :
                   'Dale me gusta a las publicaciones que te interesen'
                 }
               </Text>
@@ -858,6 +901,15 @@ const ProfileScreen: React.FC = () => {
           visible={showAvatarViewer}
           imageUrls={[userProfile.photoURL]}
           onClose={() => setShowAvatarViewer(false)}
+        />
+      )}
+
+      {/* Visor de banner */}
+      {userProfile?.bannerURL && (
+        <ImageViewer
+          visible={showBannerViewer}
+          imageUrls={[userProfile.bannerURL]}
+          onClose={() => setShowBannerViewer(false)}
         />
       )}
 
@@ -902,128 +954,182 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  profileInfo: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 16,
-    alignItems: 'center',
+
+  // Banner styles
+  bannerContainer: {
+    width: '100%',
+    height: BANNER_HEIGHT,
+    position: 'relative',
   },
-  avatarSection: {
-    marginBottom: 16,
+  bannerImage: {
+    width: '100%',
+    height: '100%',
   },
-  avatarContainer: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  avatarLoadingContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+  bannerPlaceholder: {
+    width: '100%',
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
   },
+  bannerPlaceholderText: {
+    fontSize: 14,
+    marginTop: 8,
+  },
+  bannerLoading: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  floatingHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  floatingHeaderBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  floatingHeaderRight: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  // Avatar overlap
+  avatarOverlapContainer: {
+    alignItems: 'center',
+    marginTop: -50,
+    zIndex: 10,
+  },
+  avatarWrapper: {
+    borderWidth: 4,
+    borderRadius: 50,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  avatarLoadingContainer: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  // Profile info
+  profileInfo: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 16,
+    alignItems: 'center',
+  },
   displayName: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '700',
     marginBottom: 4,
     letterSpacing: -0.3,
   },
-  profileTypeBadge: {
+  handleContainer: {
+    marginBottom: 12,
+  },
+  handleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 8,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
-  profileTypeBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  anonymousBadge: {
-    fontSize: 13,
-    marginBottom: 8,
+  handleText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
   bio: {
     fontSize: 15,
     lineHeight: 22,
     textAlign: 'center',
-    marginBottom: 12,
-    paddingHorizontal: 16,
+    marginBottom: 16,
+    paddingHorizontal: 20,
   },
-  infoSection: {
+
+  // Stats row
+  statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    flexWrap: 'wrap',
-    gap: 16,
     marginBottom: 20,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  infoText: {
-    fontSize: 13,
-  },
-  statsSection: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 32,
-    marginBottom: 20,
-    paddingVertical: 16,
     width: '100%',
   },
-  stat: {
+  statItem: {
     alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  statDivider: {
+    width: 1,
+    height: 32,
   },
   statNumber: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     marginBottom: 2,
   },
   statLabel: {
-    fontSize: 13,
+    fontSize: 12,
   },
+
+  // Action buttons
   actionButtons: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
     width: '100%',
     paddingHorizontal: 8,
   },
   editButton: {
     flex: 1,
     flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  editButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: 'white',
-  },
-  settingsButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
   },
-  hidiButtonContainer: {
-    width: '100%',
-    paddingHorizontal: 8,
-    marginTop: 12,
+  editButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  shareButton: {
+    flexDirection: 'row',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  shareButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  settingsIconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   hidiButton: {
     flexDirection: 'row',
@@ -1031,9 +1137,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     width: '100%',
+    marginTop: 12,
     paddingVertical: 12,
     paddingHorizontal: 20,
-    borderRadius: 10,
+    borderRadius: 20,
     borderWidth: 1.5,
     borderStyle: 'dashed',
   },
@@ -1041,6 +1148,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+
+  // Tabs
   tabsContainer: {
     flexDirection: 'row',
     borderBottomWidth: 0.5,
@@ -1048,15 +1157,16 @@ const styles = StyleSheet.create({
   },
   tabButton: {
     flex: 1,
-    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    gap: 4,
+    paddingVertical: 14,
+  },
+  tabButtonActive: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#F5B731',
   },
   tabLabel: {
-    fontSize: 11,
-    marginTop: 2,
+    fontSize: 14,
   },
   postsSection: {
     marginTop: 0,

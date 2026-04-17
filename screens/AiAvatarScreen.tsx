@@ -95,11 +95,18 @@ const EXPRESSION_OPTIONS = [
   { id: 'mysterious', label: 'Misterioso' },
 ];
 
+// Límite temporal de generaciones de avatar IA
+const MAX_AI_AVATAR_GENERATIONS = 2;
+
 const AiAvatarScreen: React.FC = () => {
   const { theme } = useTheme();
   const { user } = useAuth();
   const { userProfile, updateLocalProfile } = useUserProfile();
   const navigation = useNavigation();
+
+  // Contador de generaciones
+  const generationCount = userProfile?.aiAvatarGenerationCount || 0;
+  const hasReachedLimit = generationCount >= MAX_AI_AVATAR_GENERATIONS;
 
   // Whether the user already has an AI avatar
   const [showWizard, setShowWizard] = useState(false);
@@ -155,6 +162,17 @@ const AiAvatarScreen: React.FC = () => {
       Alert.alert('Error', 'Debes iniciar sesión para generar un avatar.');
       return;
     }
+
+    // Verificar límite de generaciones
+    if (hasReachedLimit) {
+      Alert.alert(
+        'Límite alcanzado',
+        `Has alcanzado el límite de ${MAX_AI_AVATAR_GENERATIONS} generaciones de avatar con IA. Puedes subir una foto como avatar en su lugar.`,
+        [{ text: 'Entendido' }]
+      );
+      return;
+    }
+
     const selections = getSelections();
 
     setLoading(true);
@@ -163,6 +181,13 @@ const AiAvatarScreen: React.FC = () => {
       const imageUrl = await generateAvatarWithGemini(selections);
       setGeneratedAvatarUrl(imageUrl);
       setGenerated(true);
+
+      // Incrementar contador de generaciones
+      const newCount = generationCount + 1;
+      if (userProfile?.id) {
+        await usersService.update(userProfile.id, { aiAvatarGenerationCount: newCount });
+        updateLocalProfile({ aiAvatarGenerationCount: newCount });
+      }
     } catch (error: any) {
       console.error('Error generating avatar:', error);
       Alert.alert('Error', 'No se pudo generar el avatar. Intenta de nuevo.');
@@ -173,6 +198,15 @@ const AiAvatarScreen: React.FC = () => {
   };
 
   const handleStartRegenerate = () => {
+    // Verificar límite antes de mostrar el wizard
+    if (hasReachedLimit) {
+      Alert.alert(
+        'Límite alcanzado',
+        `Has alcanzado el límite de ${MAX_AI_AVATAR_GENERATIONS} generaciones de avatar con IA. Puedes subir una foto como avatar en su lugar.`,
+        [{ text: 'Entendido' }]
+      );
+      return;
+    }
     setGenerated(false);
     setGeneratedAvatarUrl(null);
     setStep(1);
@@ -232,12 +266,30 @@ const AiAvatarScreen: React.FC = () => {
       setStep(1);
       return;
     }
+
+    // Verificar límite de generaciones
+    if (hasReachedLimit) {
+      Alert.alert(
+        'Límite alcanzado',
+        `Has alcanzado el límite de ${MAX_AI_AVATAR_GENERATIONS} generaciones de avatar con IA. Puedes subir una foto como avatar en su lugar.`,
+        [{ text: 'Entendido' }]
+      );
+      return;
+    }
+
     setLoading(true);
     setLoadingMessage('Regenerando avatar con Gemini AI...');
     try {
       const imageUrl = await generateAvatarWithGemini(getSelections());
       setGeneratedAvatarUrl(imageUrl);
       setGenerated(true);
+
+      // Incrementar contador de generaciones
+      const newCount = generationCount + 1;
+      if (userProfile?.id) {
+        await usersService.update(userProfile.id, { aiAvatarGenerationCount: newCount });
+        updateLocalProfile({ aiAvatarGenerationCount: newCount });
+      }
     } catch (error: any) {
       console.error('Error regenerating avatar:', error);
       Alert.alert('Error', 'No se pudo regenerar el avatar. Intenta de nuevo.');
@@ -537,12 +589,19 @@ const AiAvatarScreen: React.FC = () => {
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={[styles.secondaryButton, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface, marginTop: SPACING.sm }]}
+        style={[styles.secondaryButton, {
+          borderColor: hasReachedLimit ? theme.colors.border : theme.colors.border,
+          backgroundColor: theme.colors.surface,
+          marginTop: SPACING.sm,
+          opacity: hasReachedLimit ? 0.5 : 1,
+        }]}
         activeOpacity={0.7}
         onPress={handleStartRegenerate}
       >
-        <Ionicons name="refresh" size={scale(18)} color={theme.colors.text} />
-        <Text style={[styles.secondaryButtonText, { color: theme.colors.text }]}>Regenerar avatar con IA</Text>
+        <Ionicons name="refresh" size={scale(18)} color={hasReachedLimit ? theme.colors.textSecondary : theme.colors.text} />
+        <Text style={[styles.secondaryButtonText, { color: hasReachedLimit ? theme.colors.textSecondary : theme.colors.text }]}>
+          {hasReachedLimit ? `Límite alcanzado (${generationCount}/${MAX_AI_AVATAR_GENERATIONS})` : 'Regenerar avatar con IA'}
+        </Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -557,9 +616,17 @@ const AiAvatarScreen: React.FC = () => {
       {/* Disclaimer banner */}
       <View style={[styles.disclaimerBanner, { backgroundColor: theme.colors.accent + '15', borderColor: theme.colors.accent + '30' }]}>
         <Ionicons name="information-circle-outline" size={scale(20)} color={theme.colors.accent} />
-        <Text style={[styles.disclaimerText, { color: theme.colors.text }]}>
-          Crea un avatar generado por IA o sube una foto para usar como avatar en tu perfil Weë.
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.disclaimerText, { color: theme.colors.text }]}>
+            Crea un avatar generado por IA o sube una foto para usar como avatar en tu perfil Weë.
+          </Text>
+          <Text style={[styles.disclaimerText, { color: hasReachedLimit ? theme.colors.error : theme.colors.textSecondary, marginTop: SPACING.xs }]}>
+            {hasReachedLimit
+              ? `Has usado tus ${MAX_AI_AVATAR_GENERATIONS} generaciones con IA.`
+              : `Generaciones con IA: ${generationCount}/${MAX_AI_AVATAR_GENERATIONS}`
+            }
+          </Text>
+        </View>
       </View>
 
       {/* Upload custom photo option */}

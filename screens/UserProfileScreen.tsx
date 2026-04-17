@@ -9,11 +9,14 @@ import {
   Share,
   ActivityIndicator,
   Linking,
+  Dimensions,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useUserProfile } from '../contexts/UserProfileContext';
@@ -28,6 +31,10 @@ import PostCard from '../components/PostCard';
 import ImageViewer from '../components/ImageViewer';
 import { SPACING, FONT_SIZE, FONT_WEIGHT, BORDER_RADIUS } from '../constants/design';
 import { scale } from '../utils/scale';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const BANNER_HEIGHT = 160;
+const AVATAR_SIZE = 90;
 
 type UserProfileScreenRouteProp = RouteProp<MainStackParamList, 'UserProfile'>;
 type UserProfileScreenNavigationProp = StackNavigationProp<MainStackParamList, 'UserProfile'>;
@@ -55,6 +62,7 @@ const UserProfileScreen: React.FC = () => {
   const [postsError, setPostsError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'posts' | 'reposts' | 'photos' | 'polls' | 'likes'>('posts');
   const [showAvatarViewer, setShowAvatarViewer] = useState(false);
+  const [showBannerViewer, setShowBannerViewer] = useState(false);
 
   // Cargar posts del usuario
   useEffect(() => {
@@ -337,68 +345,85 @@ const UserProfileScreen: React.FC = () => {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          {
-            backgroundColor: theme.colors.card,
-            borderBottomColor: theme.colors.border,
-            paddingTop: insets.top + SPACING.sm,
-          },
-        ]}
-      >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-          {userProfile.displayName}
-        </Text>
-        <TouchableOpacity style={styles.shareButton} onPress={handleShareProfile}>
-          <Ionicons name="share-outline" size={24} color={theme.colors.text} />
-        </TouchableOpacity>
-      </View>
-
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Información del perfil - estilo similar a ProfileScreen */}
-        <View style={styles.profileInfo}>
-          {/* Avatar centrado */}
-          <View style={styles.avatarSection}>
-            <TouchableOpacity
-              style={styles.avatarContainer}
-              onLongPress={handleAvatarLongPress}
-              delayLongPress={300}
-              activeOpacity={0.9}
-            >
-              <AvatarDisplay
-                size={100}
-                avatarType={userProfile.avatarType || 'predefined'}
-                avatarId={userProfile.avatarId || 'male'}
-                photoURL={userProfile.photoURL}
-                photoURLThumbnail={userProfile.photoURLThumbnail}
-                backgroundColor={theme.colors.accent}
-                showBorder={false}
+        {/* Banner con botones superpuestos */}
+        <View style={styles.bannerSection}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => userProfile.bannerURL && setShowBannerViewer(true)}
+          >
+            {userProfile.bannerURL ? (
+              <Image
+                source={{ uri: userProfile.bannerURL }}
+                style={styles.bannerImage}
+                contentFit="cover"
+                transition={200}
               />
+            ) : (
+              <LinearGradient
+                colors={[theme.colors.accent, theme.colors.background]}
+                style={styles.bannerImage}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              />
+            )}
+          </TouchableOpacity>
+
+          {/* Gradient overlay */}
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.4)']}
+            style={styles.bannerGradient}
+          />
+
+          {/* Header buttons over banner */}
+          <View style={[styles.headerOverlay, { paddingTop: insets.top + SPACING.sm }]}>
+            <TouchableOpacity
+              style={styles.headerBtn}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={22} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.headerBtn} onPress={handleShareProfile}>
+              <Ionicons name="share-outline" size={22} color="#fff" />
             </TouchableOpacity>
           </View>
+        </View>
 
-          {/* Nombre */}
+        {/* Avatar superpuesto */}
+        <View style={styles.avatarOverlapContainer}>
+          <TouchableOpacity
+            style={[styles.avatarWrapper, { borderColor: theme.colors.background }]}
+            onLongPress={handleAvatarLongPress}
+            delayLongPress={300}
+            activeOpacity={0.9}
+          >
+            <AvatarDisplay
+              size={AVATAR_SIZE}
+              avatarType={userProfile.avatarType || 'predefined'}
+              avatarId={userProfile.avatarId || 'male'}
+              photoURL={userProfile.photoURL}
+              photoURLThumbnail={userProfile.photoURLThumbnail}
+              backgroundColor={theme.colors.accent}
+              showBorder={false}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* Profile info */}
+        <View style={styles.profileInfo}>
+          {/* Nombre y bio */}
           <Text style={[styles.displayName, { color: theme.colors.text }]}>
             {userProfile.displayName}
           </Text>
 
-          {/* Bio */}
           {userProfile.bio && (
             <Text style={[styles.bio, { color: theme.colors.text }]}>
               {userProfile.bio}
             </Text>
           )}
 
-          {/* Info adicional inline */}
+          {/* Info adicional */}
           <View style={styles.infoSection}>
             {userProfile.website && (
               <TouchableOpacity
@@ -419,37 +444,33 @@ const UserProfileScreen: React.FC = () => {
             <View style={styles.infoRow}>
               <Ionicons name="calendar-outline" size={14} color={theme.colors.textSecondary} />
               <Text style={[styles.infoText, { color: theme.colors.textSecondary }]}>
-                {userProfile.createdAt.toDate().toLocaleDateString('es-ES', { month: 'short', year: 'numeric' })}
+                Se unió en {userProfile.createdAt.toDate().toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}
               </Text>
             </View>
           </View>
 
-          {/* Estadísticas */}
-          <View style={styles.statsSection}>
-            <TouchableOpacity style={styles.stat} activeOpacity={0.7}>
+          {/* Estadísticas horizontales */}
+          <View style={[styles.statsRow, { borderColor: theme.colors.border }]}>
+            <View style={styles.statItem}>
               <Text style={[styles.statNumber, { color: theme.colors.text }]}>
                 {formatNumber(userProfile.posts)}
               </Text>
               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Posts</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.stat} activeOpacity={0.7}>
+            </View>
+            <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
+            <View style={styles.statItem}>
               <Text style={[styles.statNumber, { color: theme.colors.text }]}>
                 {formatNumber(userProfile.followers)}
               </Text>
               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Seguidores</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.stat} activeOpacity={0.7}>
+            </View>
+            <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
+            <View style={styles.statItem}>
               <Text style={[styles.statNumber, { color: theme.colors.text }]}>
                 {formatNumber(userProfile.following)}
               </Text>
               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Siguiendo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.stat} activeOpacity={0.7}>
-              <Text style={[styles.statNumber, { color: theme.colors.text }]}>
-                {formatNumber(userProfile.joinedCommunities?.length || 0)}
-              </Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Comunidades</Text>
-            </TouchableOpacity>
+            </View>
           </View>
 
           {/* Botones de acción */}
@@ -459,35 +480,49 @@ const UserProfileScreen: React.FC = () => {
                 style={[
                   styles.followButton,
                   {
-                    backgroundColor: isFollowing ? theme.colors.surface : theme.colors.accent,
-                    borderColor: theme.colors.border,
-                    borderWidth: isFollowing ? 1 : 0,
+                    backgroundColor: isFollowing ? 'transparent' : theme.colors.accent,
+                    borderColor: isFollowing ? theme.colors.border : theme.colors.accent,
                   },
                 ]}
                 onPress={handleToggleFollow}
                 activeOpacity={0.8}
+                disabled={isToggling}
               >
-                <Ionicons
-                  name={isFollowing ? 'checkmark' : 'person-add'}
-                  size={18}
-                  color={isFollowing ? theme.colors.text : 'white'}
-                />
-                <Text
-                  style={[
-                    styles.followButtonText,
-                    { color: isFollowing ? theme.colors.text : 'white' },
-                  ]}
-                >
-                  {isFollowing ? 'Siguiendo' : 'Seguir'}
-                </Text>
+                {isToggling ? (
+                  <ActivityIndicator size="small" color={isFollowing ? theme.colors.text : '#fff'} />
+                ) : (
+                  <>
+                    <Ionicons
+                      name={isFollowing ? 'checkmark' : 'person-add-outline'}
+                      size={18}
+                      color={isFollowing ? theme.colors.text : '#fff'}
+                    />
+                    <Text
+                      style={[
+                        styles.followButtonText,
+                        { color: isFollowing ? theme.colors.text : '#fff' },
+                      ]}
+                    >
+                      {isFollowing ? 'Siguiendo' : 'Seguir'}
+                    </Text>
+                  </>
+                )}
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.messageButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+                style={[styles.messageButton, { borderColor: theme.colors.border }]}
                 onPress={handleSendMessage}
                 activeOpacity={0.8}
               >
-                <Ionicons name="paper-plane-outline" size={20} color={theme.colors.text} />
+                <Ionicons name="chatbubble-outline" size={20} color={theme.colors.text} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.moreButton, { borderColor: theme.colors.border }]}
+                onPress={() => {/* Menu de opciones */}}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="ellipsis-horizontal" size={20} color={theme.colors.text} />
               </TouchableOpacity>
             </View>
           )}
@@ -499,7 +534,7 @@ const UserProfileScreen: React.FC = () => {
                 onPress={() => navigation.navigate('Main', { screen: 'Profile' } as any)}
                 activeOpacity={0.8}
               >
-                <Text style={styles.editProfileButtonText}>Ver mi perfil</Text>
+                <Text style={styles.editProfileButtonText}>Ver mi perfil completo</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -555,6 +590,15 @@ const UserProfileScreen: React.FC = () => {
           onClose={() => setShowAvatarViewer(false)}
         />
       )}
+
+      {/* Visor de banner */}
+      {userProfile?.bannerURL && (
+        <ImageViewer
+          visible={showBannerViewer}
+          imageUrls={[userProfile.bannerURL]}
+          onClose={() => setShowBannerViewer(false)}
+        />
+      )}
     </View>
   );
 };
@@ -568,6 +612,172 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  // Banner section
+  bannerSection: {
+    height: BANNER_HEIGHT,
+    width: SCREEN_WIDTH,
+    position: 'relative',
+  },
+  bannerImage: {
+    width: SCREEN_WIDTH,
+    height: BANNER_HEIGHT,
+  },
+  bannerGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 60,
+  },
+  headerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.md,
+  },
+  headerBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Avatar overlap
+  avatarOverlapContainer: {
+    alignItems: 'center',
+    marginTop: -(AVATAR_SIZE / 2),
+    zIndex: 10,
+  },
+  avatarWrapper: {
+    borderWidth: 4,
+    borderRadius: AVATAR_SIZE / 2 + 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  // Profile info
+  profileInfo: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 16,
+    alignItems: 'center',
+  },
+  displayName: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 6,
+    letterSpacing: -0.3,
+    textAlign: 'center',
+  },
+  bio: {
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 16,
+    opacity: 0.9,
+  },
+  infoSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: 16,
+    marginBottom: 16,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  infoText: {
+    fontSize: 13,
+  },
+  // Stats row horizontal
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    marginBottom: 16,
+    borderTopWidth: 0.5,
+    borderBottomWidth: 0.5,
+    width: '100%',
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statDivider: {
+    width: 1,
+    height: 30,
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  statLabel: {
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  // Action buttons
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  followButton: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+  },
+  followButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  messageButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moreButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editProfileButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 24,
+    alignItems: 'center',
+  },
+  editProfileButtonText: {
+    color: 'white',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  // Legacy header for error state
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -617,111 +827,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: FONT_SIZE.base,
     fontWeight: FONT_WEIGHT.semibold,
-  },
-  profileInfo: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 16,
-    alignItems: 'center',
-  },
-  avatarSection: {
-    marginBottom: 16,
-  },
-  avatarContainer: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  displayName: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 4,
-    letterSpacing: -0.3,
-    textAlign: 'center',
-  },
-  bio: {
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: 'center',
-    marginBottom: 12,
-    paddingHorizontal: 16,
-  },
-  infoSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexWrap: 'wrap',
-    gap: 16,
-    marginBottom: 20,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  infoText: {
-    fontSize: 13,
-  },
-  statsSection: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 32,
-    marginBottom: 20,
-    paddingVertical: 16,
-    width: '100%',
-  },
-  stat: {
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 13,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 10,
-    width: '100%',
-    paddingHorizontal: 8,
-  },
-  followButton: {
-    flex: 1,
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  followButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  messageButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  editProfileButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  editProfileButtonText: {
-    color: 'white',
-    fontSize: 15,
-    fontWeight: '600',
   },
   tabsContainer: {
     flexDirection: 'row',

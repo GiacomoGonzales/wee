@@ -770,11 +770,15 @@ const OnboardingScreen: React.FC = () => {
         animationType="slide"
         onRequestClose={() => setShowCountryModal(false)}
       >
-        <TouchableOpacity
-          style={styles.dateModalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowCountryModal(false)}
+        <KeyboardAvoidingView
+          style={styles.countryModalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
+          <TouchableOpacity
+            style={styles.countryModalDismiss}
+            activeOpacity={1}
+            onPress={() => setShowCountryModal(false)}
+          />
           <View
             style={[styles.countryModalContent, { backgroundColor: theme.colors.surface }]}
             onStartShouldSetResponder={() => true}
@@ -826,7 +830,7 @@ const OnboardingScreen: React.FC = () => {
               keyboardShouldPersistTaps="handled"
             />
           </View>
-        </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
     </KeyboardAvoidingView>
   );
@@ -1119,10 +1123,18 @@ const styles = StyleSheet.create({
   countrySelectorText: {
     fontSize: scale(15),
   },
+  countryModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  countryModalDismiss: {
+    flex: 1,
+  },
   countryModalContent: {
     borderTopLeftRadius: scale(16),
     borderTopRightRadius: scale(16),
-    maxHeight: '75%',
+    maxHeight: '70%',
   },
   countrySearchContainer: {
     flexDirection: 'row',

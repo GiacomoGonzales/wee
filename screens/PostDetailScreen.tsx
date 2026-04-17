@@ -262,26 +262,34 @@ const PostDetailScreen: React.FC = () => {
   };
 
   const handleCommentSubmit = async () => {
-    if ((!commentText.trim() && !commentImage) || !user || !post.id || submittingComment) return;
+    const trimmedContent = commentText.trim();
+    const currentImage = commentImage;
+
+    if ((!trimmedContent && !currentImage) || !user || !post.id || submittingComment) return;
+
+    // Limpiar input inmediatamente para mejor UX
+    setCommentText('');
+    setCommentImage(null);
+    setSubmittingComment(true);
 
     try {
-      setSubmittingComment(true);
       console.log('💬 Enviando comentario...');
-
-      const trimmedContent = commentText.trim();
 
       // Subir imagen si hay una
       let imageUrl: string | undefined;
-      if (commentImage) {
+      if (currentImage) {
         console.log('📤 Subiendo imagen del comentario...');
         try {
-          const response = await fetch(commentImage);
+          const response = await fetch(currentImage);
           const blob = await response.blob();
           imageUrl = await uploadCommentImage(blob, user.uid);
           console.log('✅ Imagen subida:', imageUrl);
         } catch (uploadError) {
           console.error('Error uploading comment image:', uploadError);
           Alert.alert('Error', 'No se pudo subir la imagen');
+          // Restaurar el comentario
+          setCommentText(trimmedContent);
+          setCommentImage(currentImage);
           setSubmittingComment(false);
           return;
         }
@@ -331,13 +339,15 @@ const PostDetailScreen: React.FC = () => {
       }
 
       console.log('✅ Comentario enviado');
-      setCommentText('');
-      setCommentImage(null);
 
       // Cerrar el teclado
       Keyboard.dismiss();
     } catch (error) {
       console.error('❌ Error enviando comentario:', error);
+      // Restaurar el comentario si hay error
+      setCommentText(trimmedContent);
+      if (currentImage) setCommentImage(currentImage);
+      Alert.alert('Error', 'No se pudo enviar el comentario. Inténtalo de nuevo.');
     } finally {
       setSubmittingComment(false);
     }
@@ -952,10 +962,10 @@ const PostDetailScreen: React.FC = () => {
         </View>
         <TouchableOpacity
           style={[styles.sendButton, {
-            backgroundColor: commentText.trim() && !submittingComment ? theme.colors.accent : theme.colors.surface,
+            backgroundColor: (commentText.trim() || submittingComment) ? theme.colors.accent : theme.colors.surface,
           }]}
           onPress={handleCommentSubmit}
-          disabled={!commentText.trim() || submittingComment}
+          disabled={(!commentText.trim() && !commentImage) || submittingComment}
         >
           {submittingComment ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
@@ -963,7 +973,7 @@ const PostDetailScreen: React.FC = () => {
             <Ionicons
               name="send"
               size={ICON_SIZE.sm}
-              color={commentText.trim() ? '#FFFFFF' : theme.colors.textSecondary}
+              color={(commentText.trim() || commentImage) ? '#FFFFFF' : theme.colors.textSecondary}
             />
           )}
         </TouchableOpacity>

@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNavigation } from '@react-navigation/native';
 import { SPACING, FONT_SIZE, FONT_WEIGHT, BORDER_RADIUS, ICON_SIZE } from '../constants/design';
+
+const isWeb = Platform.OS === 'web';
 
 const RightSidebar: React.FC = () => {
   const { theme } = useTheme();
@@ -34,13 +36,13 @@ const RightSidebar: React.FC = () => {
         styles.searchContainer,
         {
           backgroundColor: theme.colors.surface,
-          shadowColor: theme.colors.border,
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.1,
-          shadowRadius: 2,
         }
       ]}>
-        <Ionicons name="search" size={18} color={theme.colors.textSecondary} />
+        {isWeb ? (
+          <Text style={{ fontSize: 16 }}>🔍</Text>
+        ) : (
+          <Ionicons name="search" size={18} color={theme.colors.textSecondary} />
+        )}
         <TextInput
           style={[styles.searchInput, { color: theme.colors.text }]}
           placeholder="Buscar en Weë"
@@ -87,7 +89,11 @@ const RightSidebar: React.FC = () => {
                 {item.posts} publicaciones
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} />
+            {isWeb ? (
+              <Text style={{ fontSize: 14, color: theme.colors.textSecondary }}>›</Text>
+            ) : (
+              <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} />
+            )}
           </TouchableOpacity>
         ))}
 
@@ -129,7 +135,11 @@ const RightSidebar: React.FC = () => {
             ]}
           >
             <View style={[styles.suggestedAvatar, { backgroundColor: theme.colors.accent }]}>
-              <Ionicons name="person" size={20} color="white" />
+              {isWeb ? (
+                <Text style={{ fontSize: 18, color: 'white' }}>👤</Text>
+              ) : (
+                <Ionicons name="person" size={20} color="white" />
+              )}
             </View>
             <View style={styles.suggestedInfo}>
               <Text style={[styles.suggestedName, { color: theme.colors.text }]}>

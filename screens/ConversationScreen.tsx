@@ -14,9 +14,10 @@ import {
   Modal,
   StatusBar,
   Animated,
+  ScrollView,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -32,6 +33,7 @@ import AvatarDisplay from '../components/avatars/AvatarDisplay';
 import ChatCamera from '../components/ChatCamera';
 import AudioBubble from '../components/AudioBubble';
 import { SPACING, FONT_SIZE, FONT_WEIGHT, BORDER_RADIUS, ICON_SIZE } from '../constants/design';
+import { CHAT_THEMES, CHAT_WALLPAPERS, getThemeById, ChatTheme } from '../constants/chatThemes';
 import { InboxStackParamList } from '../navigation/InboxStackNavigator';
 
 type ConvRoute = RouteProp<InboxStackParamList, 'Conversation'>;
@@ -55,18 +57,23 @@ const ConversationScreen = () => {
   const [sending, setSending] = useState(false);
 
   const [ephemeral, setEphemeral] = useState(false);
-  const [bubbleColors, setBubbleColors] = useState<{ [uid: string]: string }>({});
-  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [chatThemeId, setChatThemeId] = useState('classic');
+  const [chatWallpaper, setChatWallpaper] = useState<string | null>(null);
+  const [showThemePicker, setShowThemePicker] = useState(false);
+
+  // Get current theme
+  const chatTheme = getThemeById(chatThemeId);
 
   const myUid = userProfile?.uid || user?.uid;
   const other = otherUserData || { displayName: 'Usuario', avatarType: 'predefined' as const, avatarId: 'male' };
 
-  // ─── Subscribe to conversation metadata (ephemeral state) ───
+  // ─── Subscribe to conversation metadata (ephemeral state, theme) ───
   useEffect(() => {
     if (!convId) return;
     return messagesService.subscribeToConversation(convId, (conv) => {
       setEphemeral(!!conv.ephemeral);
-      if (conv.bubbleColors) setBubbleColors(conv.bubbleColors);
+      if (conv.chatTheme) setChatThemeId(conv.chatTheme);
+      if (conv.chatWallpaper !== undefined) setChatWallpaper(conv.chatWallpaper || null);
     });
   }, [convId]);
 
@@ -85,29 +92,45 @@ const ConversationScreen = () => {
     messagesService.toggleEphemeral(convId, !ephemeral);
   }, [convId, ephemeral]);
 
-  // ─── Color picker ───
-  const BUBBLE_COLORS = [
-    { id: 'default', color: '#F5B731', label: 'Dorado' },
-    { id: 'blue', color: '#3B82F6', label: 'Azul' },
-    { id: 'green', color: '#22C55E', label: 'Verde' },
-    { id: 'purple', color: '#8B5CF6', label: 'Morado' },
-    { id: 'pink', color: '#EC4899', label: 'Rosa' },
-    { id: 'red', color: '#EF4444', label: 'Rojo' },
-    { id: 'orange', color: '#F97316', label: 'Naranja' },
-    { id: 'teal', color: '#14B8A6', label: 'Teal' },
-    { id: 'dark', color: '#374151', label: 'Oscuro' },
-  ];
+  // ─── StatusBar management ───
+  useFocusEffect(
+    useCallback(() => {
+      // Set light status bar when entering chat
+      StatusBar.setBarStyle('light-content');
 
-  // My bubble color and other's bubble color
-  const myBubbleColor = (myUid && bubbleColors[myUid]) || theme.colors.accent;
-  const otherBubbleColor = (otherUserId && bubbleColors[otherUserId]) || theme.colors.surface;
+      return () => {
+        // Restore based on app theme when leaving
+        StatusBar.setBarStyle(theme.dark ? 'light-content' : 'dark-content');
+      };
+    }, [theme.dark])
+  );
 
-  const pickColor = useCallback((color: string) => {
-    if (!convId || !myUid) return;
-    setBubbleColors(prev => ({ ...prev, [myUid]: color }));
-    setShowColorPicker(false);
-    messagesService.setBubbleColor(convId, myUid, color);
-  }, [convId, myUid]);
+  // ─── Theme picker ───
+  const pickTheme = useCallback((themeId: string) => {
+    if (!convId) return;
+    setChatThemeId(themeId);
+    messagesService.setChatTheme(convId, themeId);
+  }, [convId]);
+
+  const pickWallpaper = useCallback((wallpaperUrl: string | null) => {
+    if (!convId) return;
+    setChatWallpaper(wallpaperUrl);
+    messagesService.setChatWallpaper(convId, wallpaperUrl);
+  }, [convId]);
+
+  const pickCustomWallpaper = useCallback(async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permisos', 'Se necesitan permisos para acceder a fotos');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    pickWallpaper(result.assets[0].uri);
+  }, [pickWallpaper]);
 
   // ─── Android keyboard tracking (Expo Go uses adjustPan, KAV doesn't work) ───
   const [androidKbHeight, setAndroidKbHeight] = useState(0);
@@ -342,13 +365,16 @@ const ConversationScreen = () => {
   // ─── Render bubble ───
   const renderItem = useCallback(({ item, index }: { item: Message; index: number }) => {
     const mine = item.senderId === myUid;
+    const bubbleBg = mine ? chatTheme.myBubble : chatTheme.otherBubble;
+    const bubbleText = mine ? chatTheme.myBubbleText : chatTheme.otherBubbleText;
+    const metaColor = mine ? chatTheme.metaText : chatTheme.otherMetaText;
 
     return (
       <View>
         {showDate(index) && (
           <View style={styles.dateRow}>
-            <View style={[styles.datePill, { backgroundColor: theme.colors.surface }]}>
-              <Text style={[styles.dateText, { color: theme.colors.textSecondary }]}>
+            <View style={[styles.datePill, { backgroundColor: chatTheme.datePillBackground }]}>
+              <Text style={[styles.dateText, { color: chatTheme.datePillText }]}>
                 {fmtDate(item.timestamp)}
               </Text>
             </View>
@@ -369,11 +395,11 @@ const ConversationScreen = () => {
                 />
               </TouchableOpacity>
               <View style={[styles.meta, { marginTop: 4 }]}>
-                <Text style={[styles.time, { color: theme.colors.textSecondary }]}>
+                <Text style={[styles.time, { color: chatTheme.otherMetaText }]}>
                   {fmtTime(item.timestamp)}
                 </Text>
                 {mine && (
-                  <Ionicons name={item.read ? 'checkmark-done' : 'checkmark'} size={13} color={theme.colors.textSecondary} style={{ marginLeft: 2 }} />
+                  <Ionicons name={item.read ? 'checkmark-done' : 'checkmark'} size={13} color={chatTheme.otherMetaText} style={{ marginLeft: 2 }} />
                 )}
               </View>
             </View>
@@ -381,9 +407,8 @@ const ConversationScreen = () => {
             // ─── Text or view-once: normal bubble ───
             <View style={[
               styles.bubble,
-              mine
-                ? { backgroundColor: myBubbleColor, borderBottomRightRadius: 4 }
-                : { backgroundColor: otherBubbleColor, borderBottomLeftRadius: 4 },
+              { backgroundColor: bubbleBg },
+              mine ? { borderBottomRightRadius: 4 } : { borderBottomLeftRadius: 4 },
               item.ephemeral && styles.ephemeralBubble,
             ]}>
               {item.ephemeral && (
@@ -394,35 +419,35 @@ const ConversationScreen = () => {
               {item.type === 'image' && item.imageUrl && item.viewOnce ? (
                 item.viewOnceOpened && !mine ? (
                   <View style={styles.viewOnceOpened}>
-                    <Ionicons name="eye-off-outline" size={20} color="rgba(255,255,255,.55)" />
-                    <Text style={[styles.viewOnceText, { color: 'rgba(255,255,255,.55)' }]}>Foto vista</Text>
+                    <Ionicons name="eye-off-outline" size={20} color={metaColor} />
+                    <Text style={[styles.viewOnceText, { color: metaColor }]}>Foto vista</Text>
                   </View>
                 ) : mine ? (
                   <View style={styles.viewOnceSender}>
-                    <Ionicons name="eye-off" size={20} color="rgba(255,255,255,.7)" />
-                    <Text style={[styles.viewOnceText, { color: 'rgba(255,255,255,.7)' }]}>
+                    <Ionicons name="eye-off" size={20} color={metaColor} />
+                    <Text style={[styles.viewOnceText, { color: metaColor }]}>
                       {item.viewOnceOpened ? 'Abierta' : 'Foto única'}
                     </Text>
                   </View>
                 ) : (
                   <TouchableOpacity style={styles.viewOnceTap} onPress={() => openViewOnce(item)}>
-                    <Ionicons name="eye" size={24} color="#fff" />
-                    <Text style={[styles.viewOnceText, { color: '#fff' }]}>Toca para ver</Text>
+                    <Ionicons name="eye" size={24} color={bubbleText} />
+                    <Text style={[styles.viewOnceText, { color: bubbleText }]}>Toca para ver</Text>
                   </TouchableOpacity>
                 )
               ) : item.type === 'audio' && item.audioUrl ? (
                 <AudioBubble audioUrl={item.audioUrl} duration={item.audioDuration} mine={mine} />
               ) : (
-                <Text style={[styles.msgText, { color: '#fff' }]}>
+                <Text style={[styles.msgText, { color: bubbleText }]}>
                   {item.content}
                 </Text>
               )}
               <View style={styles.meta}>
-                <Text style={[styles.time, { color: 'rgba(255,255,255,.55)' }]}>
+                <Text style={[styles.time, { color: metaColor }]}>
                   {fmtTime(item.timestamp)}
                 </Text>
                 {mine && (
-                  <Ionicons name={item.read ? 'checkmark-done' : 'checkmark'} size={13} color="rgba(255,255,255,.55)" style={{ marginLeft: 2 }} />
+                  <Ionicons name={item.read ? 'checkmark-done' : 'checkmark'} size={13} color={metaColor} style={{ marginLeft: 2 }} />
                 )}
               </View>
             </View>
@@ -430,7 +455,7 @@ const ConversationScreen = () => {
         </View>
       </View>
     );
-  }, [messages, theme, myUid, myBubbleColor, otherBubbleColor]);
+  }, [messages, myUid, chatTheme]);
 
   // ─── Loading ───
   if (loading) {
@@ -442,30 +467,29 @@ const ConversationScreen = () => {
   }
 
   return (
-    <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
-
+    <View style={[styles.screen, { backgroundColor: chatTheme.backgroundColor }]}>
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.colors.card, borderColor: theme.colors.border, paddingTop: insets.top + SPACING.md }]}>
+      <View style={[styles.header, { backgroundColor: chatTheme.headerBackground, borderColor: chatTheme.headerBackground, paddingTop: insets.top + SPACING.md }]}>
         <TouchableOpacity onPress={() => nav.goBack()} hitSlop={8}>
-          <Ionicons name="chevron-back" size={26} color={theme.colors.text} />
+          <Ionicons name="chevron-back" size={26} color={chatTheme.headerText} />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.headerUser} activeOpacity={0.7}>
           <AvatarDisplay size={34} avatarType={other.avatarType || 'predefined'} avatarId={other.avatarId || 'male'}
             photoURL={typeof other.photoURL === 'string' ? other.photoURL : undefined}
-            backgroundColor={theme.colors.accent} showBorder={false} />
+            backgroundColor={chatTheme.accent} showBorder={false} />
           <View>
-            <Text style={[styles.headerName, { color: theme.colors.text }]} numberOfLines={1}>
+            <Text style={[styles.headerName, { color: chatTheme.headerText }]} numberOfLines={1}>
               {other.displayName}
             </Text>
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity hitSlop={8} onPress={() => setShowColorPicker(true)} style={styles.ephemeralBtn}>
-          <Ionicons name="color-palette-outline" size={20} color={theme.colors.textSecondary} />
+        <TouchableOpacity hitSlop={8} onPress={() => setShowThemePicker(true)} style={styles.ephemeralBtn}>
+          <Ionicons name="color-palette-outline" size={20} color={chatTheme.headerIcon} />
         </TouchableOpacity>
         <TouchableOpacity hitSlop={8} onPress={toggleEphemeral} style={[styles.ephemeralBtn, ephemeral && { backgroundColor: 'rgba(34,197,94,0.15)' }]}>
-          <Ionicons name={ephemeral ? 'eye-off' : 'eye-off-outline'} size={20} color={ephemeral ? '#22C55E' : theme.colors.textSecondary} />
+          <Ionicons name={ephemeral ? 'eye-off' : 'eye-off-outline'} size={20} color={ephemeral ? '#22C55E' : chatTheme.headerIcon} />
         </TouchableOpacity>
       </View>
 
@@ -474,6 +498,17 @@ const ConversationScreen = () => {
         <View style={[styles.ephemeralBanner, { backgroundColor: 'rgba(34,197,94,0.1)' }]}>
           <Ionicons name="eye-off" size={14} color="#22C55E" />
           <Text style={styles.ephemeralBannerText}>Modo efímero activado · Los mensajes se borran al salir</Text>
+        </View>
+      )}
+
+      {/* Chat background wallpaper */}
+      {chatWallpaper && (
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          <Image
+            source={{ uri: chatWallpaper }}
+            style={[StyleSheet.absoluteFill, { opacity: 0.25 }]}
+            contentFit="cover"
+          />
         </View>
       )}
 
@@ -499,20 +534,20 @@ const ConversationScreen = () => {
               <View style={styles.skeletonWrap}>
                 {[0.7, 0.5, 0.85, 0.4, 0.65].map((w, i) => (
                   <View key={i} style={[styles.skeletonRow, i % 2 === 0 ? styles.rowL : styles.rowR]}>
-                    <View style={[styles.skeletonBubble, { width: `${w * 70}%`, backgroundColor: theme.colors.surface }]} />
+                    <View style={[styles.skeletonBubble, { width: `${w * 70}%`, backgroundColor: chatTheme.inputBackground }]} />
                   </View>
                 ))}
               </View>
             ) : (
               <View style={styles.emptyState}>
-                <Ionicons name="chatbubble-ellipses-outline" size={56} color={theme.colors.textSecondary} style={{ opacity: 0.3 }} />
-                <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>Envía el primer mensaje</Text>
+                <Ionicons name="chatbubble-ellipses-outline" size={56} color={chatTheme.inputPlaceholder} style={{ opacity: 0.3 }} />
+                <Text style={[styles.emptyText, { color: chatTheme.inputPlaceholder }]}>Envía el primer mensaje</Text>
               </View>
             )
           }
         />
         {recording ? (
-          <View style={[styles.inputBar, styles.recordingBar, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, paddingBottom: Math.max(insets.bottom, 6) }]}>
+          <View style={[styles.inputBar, styles.recordingBar, { backgroundColor: chatTheme.inputBarBackground, borderColor: chatTheme.inputBackground, paddingBottom: Math.max(insets.bottom, 6) }]}>
             <Animated.View style={[styles.recordingDot, { transform: [{ scale: pulseAnim }] }]} />
             <Text style={styles.recordingTime}>{Math.floor(recordDuration / 60)}:{(recordDuration % 60).toString().padStart(2, '0')}</Text>
             <View style={styles.recordingWave}>
@@ -525,16 +560,16 @@ const ConversationScreen = () => {
             </TouchableOpacity>
           </View>
         ) : (
-          <View style={[styles.inputBar, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, paddingBottom: Math.max(insets.bottom, 6) }]}>
-            <TouchableOpacity style={[styles.cameraBtn, { backgroundColor: myBubbleColor }]} onPress={() => setCameraOpen(true)} disabled={sending}>
-              <Ionicons name="camera" size={20} color="#fff" />
+          <View style={[styles.inputBar, { backgroundColor: chatTheme.inputBarBackground, borderColor: chatTheme.inputBackground, paddingBottom: Math.max(insets.bottom, 6) }]}>
+            <TouchableOpacity style={[styles.cameraBtn, { backgroundColor: chatTheme.accent }]} onPress={() => setCameraOpen(true)} disabled={sending}>
+              <Ionicons name="camera" size={20} color={chatTheme.accentText} />
             </TouchableOpacity>
-            <View style={[styles.inputWrap, { backgroundColor: theme.colors.surface }]}>
+            <View style={[styles.inputWrap, { backgroundColor: chatTheme.inputBackground }]}>
               <TextInput
                 ref={inputRef}
-                style={[styles.input, { color: theme.colors.text }]}
+                style={[styles.input, { color: chatTheme.inputText }]}
                 placeholder="Mensaje..."
-                placeholderTextColor={theme.colors.textSecondary}
+                placeholderTextColor={chatTheme.inputPlaceholder}
                 value={text}
                 onChangeText={setText}
                 multiline
@@ -542,16 +577,16 @@ const ConversationScreen = () => {
                 editable={!sending}
               />
               {text.trim() ? (
-                <TouchableOpacity onPress={send} disabled={sending} style={[styles.sendBtn, { backgroundColor: myBubbleColor }]}>
-                  {sending ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="send" size={16} color="#fff" />}
+                <TouchableOpacity onPress={send} disabled={sending} style={[styles.sendBtn, { backgroundColor: chatTheme.accent }]}>
+                  {sending ? <ActivityIndicator size="small" color={chatTheme.accentText} /> : <Ionicons name="send" size={16} color={chatTheme.accentText} />}
                 </TouchableOpacity>
               ) : (
                 <View style={styles.inputActions}>
                   <TouchableOpacity style={styles.inputActionBtn} onPressIn={startRecording} disabled={sending}>
-                    <Ionicons name="mic-outline" size={22} color={theme.colors.textSecondary} />
+                    <Ionicons name="mic-outline" size={22} color={chatTheme.inputPlaceholder} />
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.inputActionBtn} onPress={pickImage} disabled={sending}>
-                    <Ionicons name="image-outline" size={22} color={theme.colors.textSecondary} />
+                    <Ionicons name="image-outline" size={22} color={chatTheme.inputPlaceholder} />
                   </TouchableOpacity>
                 </View>
               )}
@@ -576,20 +611,20 @@ const ConversationScreen = () => {
               <View style={styles.skeletonWrap}>
                 {[0.7, 0.5, 0.85, 0.4, 0.65].map((w, i) => (
                   <View key={i} style={[styles.skeletonRow, i % 2 === 0 ? styles.rowL : styles.rowR]}>
-                    <View style={[styles.skeletonBubble, { width: `${w * 70}%`, backgroundColor: theme.colors.surface }]} />
+                    <View style={[styles.skeletonBubble, { width: `${w * 70}%`, backgroundColor: chatTheme.inputBackground }]} />
                   </View>
                 ))}
               </View>
             ) : (
               <View style={styles.emptyState}>
-                <Ionicons name="chatbubble-ellipses-outline" size={56} color={theme.colors.textSecondary} style={{ opacity: 0.3 }} />
-                <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>Envía el primer mensaje</Text>
+                <Ionicons name="chatbubble-ellipses-outline" size={56} color={chatTheme.inputPlaceholder} style={{ opacity: 0.3 }} />
+                <Text style={[styles.emptyText, { color: chatTheme.inputPlaceholder }]}>Envía el primer mensaje</Text>
               </View>
             )
           }
         />
         {recording ? (
-          <View style={[styles.inputBar, styles.recordingBar, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, paddingBottom: androidKbHeight > 0 ? 10 : Math.max(insets.bottom, 16) }]}>
+          <View style={[styles.inputBar, styles.recordingBar, { backgroundColor: chatTheme.inputBarBackground, borderColor: chatTheme.inputBackground, paddingBottom: androidKbHeight > 0 ? 10 : Math.max(insets.bottom, 16) }]}>
             <Animated.View style={[styles.recordingDot, { transform: [{ scale: pulseAnim }] }]} />
             <Text style={styles.recordingTime}>{Math.floor(recordDuration / 60)}:{(recordDuration % 60).toString().padStart(2, '0')}</Text>
             <View style={styles.recordingWave}>
@@ -602,16 +637,16 @@ const ConversationScreen = () => {
             </TouchableOpacity>
           </View>
         ) : (
-          <View style={[styles.inputBar, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, paddingBottom: androidKbHeight > 0 ? 10 : Math.max(insets.bottom, 16) }]}>
-            <TouchableOpacity style={[styles.cameraBtn, { backgroundColor: myBubbleColor }]} onPress={() => setCameraOpen(true)} disabled={sending}>
-              <Ionicons name="camera" size={20} color="#fff" />
+          <View style={[styles.inputBar, { backgroundColor: chatTheme.inputBarBackground, borderColor: chatTheme.inputBackground, paddingBottom: androidKbHeight > 0 ? 10 : Math.max(insets.bottom, 16) }]}>
+            <TouchableOpacity style={[styles.cameraBtn, { backgroundColor: chatTheme.accent }]} onPress={() => setCameraOpen(true)} disabled={sending}>
+              <Ionicons name="camera" size={20} color={chatTheme.accentText} />
             </TouchableOpacity>
-            <View style={[styles.inputWrap, { backgroundColor: theme.colors.surface }]}>
+            <View style={[styles.inputWrap, { backgroundColor: chatTheme.inputBackground }]}>
               <TextInput
                 ref={inputRef}
-                style={[styles.input, { color: theme.colors.text }]}
+                style={[styles.input, { color: chatTheme.inputText }]}
                 placeholder="Mensaje..."
-                placeholderTextColor={theme.colors.textSecondary}
+                placeholderTextColor={chatTheme.inputPlaceholder}
                 value={text}
                 onChangeText={setText}
                 multiline
@@ -619,16 +654,16 @@ const ConversationScreen = () => {
                 editable={!sending}
               />
               {text.trim() ? (
-                <TouchableOpacity onPress={send} disabled={sending} style={[styles.sendBtn, { backgroundColor: myBubbleColor }]}>
-                  {sending ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="send" size={16} color="#fff" />}
+                <TouchableOpacity onPress={send} disabled={sending} style={[styles.sendBtn, { backgroundColor: chatTheme.accent }]}>
+                  {sending ? <ActivityIndicator size="small" color={chatTheme.accentText} /> : <Ionicons name="send" size={16} color={chatTheme.accentText} />}
                 </TouchableOpacity>
               ) : (
                 <View style={styles.inputActions}>
                   <TouchableOpacity style={styles.inputActionBtn} onPressIn={startRecording} disabled={sending}>
-                    <Ionicons name="mic-outline" size={22} color={theme.colors.textSecondary} />
+                    <Ionicons name="mic-outline" size={22} color={chatTheme.inputPlaceholder} />
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.inputActionBtn} onPress={pickImage} disabled={sending}>
-                    <Ionicons name="image-outline" size={22} color={theme.colors.textSecondary} />
+                    <Ionicons name="image-outline" size={22} color={chatTheme.inputPlaceholder} />
                   </TouchableOpacity>
                 </View>
               )}
@@ -660,29 +695,81 @@ const ConversationScreen = () => {
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.previewSendBtn} onPress={confirmSendImage}>
-              <Ionicons name="send" size={22} color="#fff" />
+            <TouchableOpacity style={[styles.previewSendBtn, { backgroundColor: chatTheme.accent }]} onPress={confirmSendImage}>
+              <Ionicons name="send" size={22} color={chatTheme.accentText} />
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Color picker */}
-      <Modal visible={showColorPicker} transparent animationType="fade" onRequestClose={() => setShowColorPicker(false)}>
-        <TouchableOpacity style={styles.colorPickerOverlay} activeOpacity={1} onPress={() => setShowColorPicker(false)}>
-          <View style={[styles.colorPickerSheet, { backgroundColor: theme.colors.card }]}>
-            <Text style={[styles.colorPickerTitle, { color: theme.colors.text }]}>Color del chat</Text>
-            <View style={styles.colorGrid}>
-              {BUBBLE_COLORS.map(c => (
+      {/* Theme picker */}
+      <Modal visible={showThemePicker} transparent animationType="slide" onRequestClose={() => setShowThemePicker(false)}>
+        <View style={styles.colorPickerOverlay}>
+          <TouchableOpacity style={styles.colorPickerDismiss} onPress={() => setShowThemePicker(false)} />
+          <View style={[styles.colorPickerSheet, { backgroundColor: chatTheme.headerBackground }]}>
+            <View style={styles.sheetHandle} />
+
+            {/* Themes section */}
+            <Text style={[styles.colorPickerTitle, { color: chatTheme.headerText }]}>Tema</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.themeScrollView}>
+              <View style={styles.themeGrid}>
+                {CHAT_THEMES.map(t => (
+                  <TouchableOpacity
+                    key={t.id}
+                    style={[
+                      styles.themeOption,
+                      { backgroundColor: t.backgroundColor, borderColor: t.accent },
+                      chatThemeId === t.id && styles.themeOptionActive,
+                    ]}
+                    onPress={() => pickTheme(t.id)}
+                  >
+                    <View style={[styles.themePreviewBubble, { backgroundColor: t.myBubble }]} />
+                    <View style={[styles.themePreviewBubbleOther, { backgroundColor: t.otherBubble }]} />
+                    <Text style={[styles.themeOptionLabel, { color: t.headerText }]}>{t.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            {/* Wallpapers section */}
+            <Text style={[styles.colorPickerTitle, { color: chatTheme.headerText, marginTop: 20 }]}>Fondo</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.wallpaperScrollView}>
+              <View style={styles.wallpaperGrid}>
+                {CHAT_WALLPAPERS.map(w => (
+                  <TouchableOpacity
+                    key={w.id}
+                    style={[
+                      styles.wallpaperOption,
+                      { backgroundColor: chatTheme.inputBackground },
+                      chatWallpaper === w.url && styles.wallpaperOptionActive,
+                    ]}
+                    onPress={() => pickWallpaper(w.url)}
+                  >
+                    {w.preview ? (
+                      <Image source={{ uri: w.preview }} style={styles.wallpaperPreview} contentFit="cover" />
+                    ) : (
+                      <Ionicons name="ban-outline" size={24} color={chatTheme.inputPlaceholder} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+                {/* Custom wallpaper option */}
                 <TouchableOpacity
-                  key={c.id}
-                  style={[styles.colorOption, { backgroundColor: c.color }, myBubbleColor === c.color && styles.colorOptionActive]}
-                  onPress={() => pickColor(c.color)}
-                />
-              ))}
-            </View>
+                  style={[styles.wallpaperOption, { backgroundColor: chatTheme.inputBackground }]}
+                  onPress={pickCustomWallpaper}
+                >
+                  <Ionicons name="add" size={28} color={chatTheme.accent} />
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.doneButton, { backgroundColor: chatTheme.accent }]}
+              onPress={() => setShowThemePicker(false)}
+            >
+              <Text style={[styles.doneButtonText, { color: chatTheme.accentText }]}>Listo</Text>
+            </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
 
       {/* Custom camera */}
@@ -785,13 +872,27 @@ const styles = StyleSheet.create({
   ephemeralBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 6 },
   ephemeralBannerText: { color: '#22C55E', fontSize: 11, fontWeight: FONT_WEIGHT.medium },
 
-  // Color picker
+  // Theme picker
   colorPickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  colorPickerSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 24, paddingTop: 20, paddingBottom: 40 },
-  colorPickerTitle: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.semibold, marginBottom: 16, textAlign: 'center' },
-  colorGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 14 },
-  colorOption: { width: 44, height: 44, borderRadius: 22 },
-  colorOptionActive: { borderWidth: 3, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 4 },
+  colorPickerDismiss: { flex: 1 },
+  colorPickerSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 40 },
+  sheetHandle: { width: 40, height: 4, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  colorPickerTitle: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.semibold, marginBottom: 12, marginLeft: 4 },
+  themeScrollView: { marginHorizontal: -20, paddingHorizontal: 20 },
+  themeGrid: { flexDirection: 'row', gap: 10, paddingRight: 20 },
+  themeOption: { width: 85, height: 70, borderRadius: 12, padding: 8, alignItems: 'center', justifyContent: 'flex-end', borderWidth: 2, borderColor: 'transparent' },
+  themeOptionActive: { borderWidth: 2 },
+  themePreviewBubble: { position: 'absolute', top: 8, right: 10, width: 26, height: 14, borderRadius: 7 },
+  themePreviewBubbleOther: { position: 'absolute', top: 24, left: 10, width: 20, height: 12, borderRadius: 6 },
+  themeOptionLabel: { fontSize: 10, fontWeight: FONT_WEIGHT.medium, marginTop: 4 },
+  wallpaperScrollView: { marginHorizontal: -20, paddingHorizontal: 20 },
+  wallpaperGrid: { flexDirection: 'row', gap: 10, paddingRight: 20 },
+  wallpaperOption: { width: 70, height: 70, borderRadius: 12, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'transparent' },
+  wallpaperOptionActive: { borderColor: '#F5B731' },
+  wallpaperPreview: { width: '100%', height: '100%' },
+  doneButton: { marginTop: 24, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  doneButtonText: { fontSize: FONT_SIZE.base, fontWeight: FONT_WEIGHT.semibold },
+  chatBackground: { flex: 1 },
 
   // View once styles
   viewOnceOpened: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8 },
@@ -807,7 +908,7 @@ const styles = StyleSheet.create({
   previewToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 24 },
   previewToggleActive: { backgroundColor: 'rgba(34,197,94,0.6)' },
   previewToggleText: { color: '#fff', fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium },
-  previewSendBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#F5B731', justifyContent: 'center', alignItems: 'center' },
+  previewSendBtn: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
 
   // View once fullscreen viewer
   viewOnceModal: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center', padding: 20 },

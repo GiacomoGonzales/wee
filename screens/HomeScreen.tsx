@@ -412,6 +412,7 @@ const HomeScreen: React.FC = () => {
   }, [navigation]);
 
   const loadPosts = async (isInitial = false, forceRefresh = false) => {
+    console.log('📝 loadPosts called:', { isInitial, forceRefresh, selectedCommunitySlug });
     const cacheKey = selectedCommunitySlug || 'all';
     const cached = postsCache.current.get(cacheKey);
     const now = Date.now();
@@ -449,6 +450,7 @@ const HomeScreen: React.FC = () => {
       }
 
       const documents = result?.documents || [];
+      console.log('📝 Posts loaded:', documents.length, 'posts');
 
       // Guardar en cache
       postsCache.current.set(cacheKey, {
@@ -461,7 +463,7 @@ const HomeScreen: React.FC = () => {
       setLastDoc(result?.lastDoc || null);
       setHasMore(documents.length === 15);
     } catch (err) {
-      console.error('Error loading posts:', err);
+      console.error('❌ Error loading posts:', err);
       // Solo mostrar error si no hay cache
       if (!cached) {
         setError('Error al cargar los posts');
@@ -1038,23 +1040,8 @@ const HomeScreen: React.FC = () => {
             <Text style={[styles.emptySubtitle, { color: theme.colors.textSecondary }]}>
               {selectedCommunitySlug
                 ? 'Esta comunidad aún no tiene posts. ¡Sé el primero!'
-                : 'No hay posts aún. Crea el primer post y comienza la conversación.'}
+                : 'Usa el campo de arriba para crear tu primer post.'}
             </Text>
-            <TouchableOpacity
-              style={[
-                styles.createFirstPostButton,
-                {
-                  backgroundColor: theme.colors.accent,
-                  shadowColor: theme.colors.accent,
-                  shadowOffset: { width: 0, height: scale(4) },
-                  shadowOpacity: 0.3,
-                  shadowRadius: scale(12),
-                }
-              ]}
-              onPress={() => (navigation as any).navigate('Create')}
-            >
-              <Text style={styles.createFirstPostText}>Crear mi primer post</Text>
-            </TouchableOpacity>
           </View>
         )}
       />
@@ -1427,17 +1414,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: SPACING.xxxl,
     fontWeight: FONT_WEIGHT.regular,
-  },
-  createFirstPostButton: {
-    paddingHorizontal: SPACING.xxxl,
-    paddingVertical: SPACING.lg,
-    borderRadius: BORDER_RADIUS.full,
-  },
-  createFirstPostText: {
-    color: 'white',
-    fontSize: FONT_SIZE.base,
-    fontWeight: FONT_WEIGHT.semibold,
-    letterSpacing: scale(-0.2),
   },
 });
 

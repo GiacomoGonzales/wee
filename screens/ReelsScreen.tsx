@@ -13,6 +13,7 @@ import {
   Image,
   Animated,
 } from 'react-native';
+import { isWeb } from '../utils/platform';
 import { Video, ResizeMode, AVPlaybackStatus, Audio } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -57,6 +58,12 @@ const ReelItem: React.FC<ReelItemProps> = React.memo(({ post, isActive, onBack, 
   const [progress, setProgress] = useState(0);
   const insets = useSafeAreaInsets();
 
+  // Double tap for like
+  const lastTap = useRef<number>(0);
+  const [showLikeHeart, setShowLikeHeart] = useState(false);
+  const heartScale = useRef(new Animated.Value(0)).current;
+  const heartOpacity = useRef(new Animated.Value(0)).current;
+
   const { stats: voteStats, voteAgree, voteDisagree } = useVote({
     postId: post.id!,
     userId: activeProfile?.uid || user?.uid,
@@ -83,24 +90,63 @@ const ReelItem: React.FC<ReelItemProps> = React.memo(({ post, isActive, onBack, 
     }
   }, [isActive, isPaused]);
 
+  // Animate like heart (simplified for web)
+  const animateLikeHeart = useCallback(() => {
+    setShowLikeHeart(true);
+    if (isWeb) {
+      // Simple timeout for web - no animation
+      setTimeout(() => setShowLikeHeart(false), 600);
+    } else {
+      heartScale.setValue(0);
+      heartOpacity.setValue(1);
+      Animated.sequence([
+        Animated.spring(heartScale, {
+          toValue: 1,
+          friction: 3,
+          tension: 100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(heartOpacity, {
+          toValue: 0,
+          duration: 400,
+          delay: 200,
+          useNativeDriver: true,
+        }),
+      ]).start(() => setShowLikeHeart(false));
+    }
+  }, [heartScale, heartOpacity]);
+
   const handleTapVideo = useCallback(() => {
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+
+    // Check for double tap
+    if (now - lastTap.current < DOUBLE_TAP_DELAY) {
+      // Double tap - give like + show heart
+      if (voteStats.userVote !== 'agree') {
+        voteAgree();
+      }
+      animateLikeHeart();
+      lastTap.current = 0;
+      return; // Don't toggle pause on double tap
+    }
+
+    lastTap.current = now;
+
+    // Single tap - immediate pause/play
     if (!videoRef.current) return;
     const willPause = !isPaused;
-    // Clear any pending hide timer
     if (tapIconTimer.current) clearTimeout(tapIconTimer.current);
-    // Show the icon
     setTapIconType(willPause ? 'pause' : 'play');
     setShowTapIcon(true);
     if (willPause) {
       videoRef.current.pauseAsync();
-      // Keep pause icon visible while paused
     } else {
       videoRef.current.playAsync();
-      // Hide play icon after a moment
       tapIconTimer.current = setTimeout(() => setShowTapIcon(false), 600);
     }
     setIsPaused(willPause);
-  }, [isPaused]);
+  }, [isPaused, voteStats.userVote, voteAgree, animateLikeHeart]);
 
   const handlePlaybackStatus = useCallback((status: AVPlaybackStatus) => {
     if (status.isLoaded) {
@@ -120,39 +166,62 @@ const ReelItem: React.FC<ReelItemProps> = React.memo(({ post, isActive, onBack, 
 
   return (
     <View style={[styles.reelContainer, { height: SCREEN_HEIGHT }]}>
-      {/* Poster image — visible immediately, stays until video plays */}
-      {post.imageUrls?.[0] && (
+      {/* Video layer */}
+      <Video
+        ref={videoRef}
+        source={{ uri: post.videoUrl! }}
+        style={StyleSheet.absoluteFill}
+        resizeMode={ResizeMode.COVER}
+        shouldPlay={isActive}
+        isMuted={false}
+        isLooping
+        progressUpdateIntervalMillis={100}
+        onPlaybackStatusUpdate={handlePlaybackStatus}
+      />
+
+      {/* Poster image — visible until video plays */}
+      {post.imageUrls?.[0] && !hasStartedPlaying && (
         <Image
           source={{ uri: post.imageUrls[0] }}
-          style={[StyleSheet.absoluteFill, { zIndex: hasStartedPlaying ? 0 : 2 }]}
+          style={StyleSheet.absoluteFill}
           resizeMode="cover"
         />
       )}
 
-      {/* Full-screen video — renders underneath poster until ready */}
+      {/* Tap area - always on top for touch handling */}
       <TouchableOpacity
         activeOpacity={1}
         onPress={handleTapVideo}
-        style={[StyleSheet.absoluteFill, { zIndex: hasStartedPlaying ? 1 : 0 }]}
-      >
-        <Video
-          ref={videoRef}
-          source={{ uri: post.videoUrl! }}
-          style={{ width: '100%', height: '100%' }}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay={isActive}
-          isMuted={false}
-          isLooping
-          progressUpdateIntervalMillis={100}
-          onPlaybackStatusUpdate={handlePlaybackStatus}
-        />
-        {/* Play/Pause icon placeholder - moved outside */}
-      </TouchableOpacity>
+        style={[StyleSheet.absoluteFill, { zIndex: 5 }]}
+      />
 
       {/* Spinner only when rebuffering mid-playback, not on initial load */}
       {isBuffering && isActive && hasStartedPlaying && (
         <View style={[styles.pauseOverlay, { zIndex: 10 }]} pointerEvents="none">
           <ActivityIndicator size="large" color="white" />
+        </View>
+      )}
+
+      {/* Double tap like heart animation */}
+      {showLikeHeart && (
+        <View style={styles.likeHeartOverlay} pointerEvents="none">
+          {isWeb ? (
+            <View style={styles.likeHeartContainer}>
+              <Ionicons name="heart" size={scale(100)} color="#EF4444" />
+            </View>
+          ) : (
+            <Animated.View
+              style={[
+                styles.likeHeartContainer,
+                {
+                  transform: [{ scale: heartScale }],
+                  opacity: heartOpacity,
+                },
+              ]}
+            >
+              <Ionicons name="heart" size={scale(100)} color="#EF4444" />
+            </Animated.View>
+          )}
         </View>
       )}
 
@@ -297,22 +366,31 @@ const ReelsScreen: React.FC<ReelsScreenProps> = (props) => {
   const [activeIndex, setActiveIndex] = useState(0);
   const loadedIds = useRef(new Set<string>(initialVideoPosts.map(p => p.id!)));
 
-  // Swipe horizontal para volver al wall
+  // Swipe horizontal para volver al wall (solo desde borde izquierdo)
   const translateX = useRef(new Animated.Value(0)).current;
   const swipeStartX = useRef(0);
+  const isSwipeActive = useRef(false);
 
   const handleTouchStart = useCallback((e: any) => {
-    swipeStartX.current = e.nativeEvent.pageX;
+    const startX = e.nativeEvent.pageX;
+    swipeStartX.current = startX;
+    // Solo activar swipe si empieza desde el borde izquierdo (primeros 40px)
+    isSwipeActive.current = startX < 40;
   }, []);
 
   const handleTouchMove = useCallback((e: any) => {
+    if (!isSwipeActive.current) return;
     const dx = e.nativeEvent.pageX - swipeStartX.current;
-    if (dx > 20) {
+    if (dx > 0) {
       translateX.setValue(dx);
     }
   }, [translateX]);
 
   const handleTouchEnd = useCallback((e: any) => {
+    if (!isSwipeActive.current) {
+      isSwipeActive.current = false;
+      return;
+    }
     const dx = e.nativeEvent.pageX - swipeStartX.current;
     if (dx > SCREEN_WIDTH * 0.3) {
       Animated.timing(translateX, {
@@ -328,6 +406,7 @@ const ReelsScreen: React.FC<ReelsScreenProps> = (props) => {
         useNativeDriver: true,
       }).start();
     }
+    isSwipeActive.current = false;
   }, [translateX, navigation]);
 
   // Calculate initial scroll index
@@ -409,19 +488,23 @@ const ReelsScreen: React.FC<ReelsScreenProps> = (props) => {
 
   const keyExtractor = useCallback((item: Post) => item.id!, []);
 
+  // Web: use simple View, Mobile: use Animated.View with swipe gestures
+  const ContainerComponent = isWeb ? View : Animated.View;
+  const containerProps = isWeb ? {} : {
+    onTouchStart: handleTouchStart,
+    onTouchMove: handleTouchMove,
+    onTouchEnd: handleTouchEnd,
+  };
+  const containerStyle = isWeb ? styles.container : [styles.container, { transform: [{ translateX }] }];
+
   return (
-    <Animated.View
-      style={[styles.container, { transform: [{ translateX }] }]}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-    >
+    <ContainerComponent style={containerStyle} {...containerProps}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <FlatList
         data={videoPosts}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        pagingEnabled
+        pagingEnabled={!isWeb}
         showsVerticalScrollIndicator={false}
         getItemLayout={getItemLayout}
         initialScrollIndex={initialIndex}
@@ -440,7 +523,7 @@ const ReelsScreen: React.FC<ReelsScreenProps> = (props) => {
           ) : null
         }
       />
-    </Animated.View>
+    </ContainerComponent>
   );
 };
 
@@ -579,6 +662,19 @@ const styles = StyleSheet.create({
   loadingFooter: {
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  likeHeartOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  likeHeartContainer: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
 });
 

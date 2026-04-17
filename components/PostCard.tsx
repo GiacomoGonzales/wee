@@ -43,10 +43,12 @@ import { SPACING, FONT_SIZE, FONT_WEIGHT, BORDER_RADIUS, ICON_SIZE } from '../co
 import { scale } from '../utils/scale';
 import { getCachedAspectRatio, setCachedAspectRatio, fetchAndCacheAspectRatio } from '../utils/imageDimensionCache';
 
-// Enable LayoutAnimation on Android
+// Enable LayoutAnimation on Android (not on web)
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
+
+const isWebPlatform = Platform.OS === 'web';
 
 type PostCardNavigationProp = StackNavigationProp<MainStackParamList>;
 
@@ -236,8 +238,16 @@ const PostCard: React.FC<PostCardProps> = ({
     }
   }, [post.poll, activeProfile?.uid, user?.uid]);
 
-  // Animar menú cuando se abre/cierra
+  // Animar menú cuando se abre/cierra (solo en mobile)
+  const isWeb = Platform.OS === 'web';
   useEffect(() => {
+    if (isWeb) {
+      // Web: sin animación, mostrar/ocultar instantáneo
+      menuOpacity.setValue(menuVisible ? 1 : 0);
+      menuScale.setValue(1);
+      return;
+    }
+    // Mobile: con animación
     if (menuVisible) {
       Animated.parallel([
         Animated.timing(menuOpacity, {
@@ -311,7 +321,10 @@ const PostCard: React.FC<PostCardProps> = ({
 
     // Priority 3: fetch via getSize (only for old posts without stored ratios)
     fetchAndCacheAspectRatio(imageUrls[0], (aspectRatio) => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      // Skip LayoutAnimation on web
+      if (!isWebPlatform) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      }
       setImageDimensions({ width: aspectRatio, height: 1, aspectRatio });
     });
   }, [isRepost, originalPost, post.imageUrls]);
@@ -651,48 +664,50 @@ const PostCard: React.FC<PostCardProps> = ({
     if (!displayPost.videoUrl) return null;
 
     return (
-      <View style={styles.videoContainer}>
-        <TouchableOpacity
-          activeOpacity={0.95}
-          onPress={onVideoPress ? () => onVideoPress(displayPost, playbackPositionRef.current) : handleVideoTap}
-          style={styles.videoTouchable}
-        >
-          <Video
-            ref={videoRef}
-            source={{ uri: displayPost.videoUrl }}
-            style={styles.videoPlayer}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={isVisible && isFocused}
-            isMuted={isMuted}
-            isLooping={true}
-            onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
-            posterSource={displayPost.imageUrls?.[0] ? { uri: displayPost.imageUrls[0] } : undefined}
-            posterStyle={styles.videoPoster}
-            usePoster={!!displayPost.imageUrls?.[0]}
-          />
+      <View style={[styles.videoContainer, isWebPlatform && styles.videoContainerWeb]}>
+        <View style={isWebPlatform ? styles.videoPhoneFrame : styles.videoTouchable}>
+          <TouchableOpacity
+            activeOpacity={0.95}
+            onPress={onVideoPress ? () => onVideoPress(displayPost, playbackPositionRef.current) : handleVideoTap}
+            style={styles.videoTouchable}
+          >
+            <Video
+              ref={videoRef}
+              source={{ uri: displayPost.videoUrl }}
+              style={styles.videoPlayer}
+              resizeMode={ResizeMode.COVER}
+              shouldPlay={isVisible && isFocused && !isWebPlatform}
+              isMuted={isMuted}
+              isLooping={true}
+              onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
+              posterSource={displayPost.imageUrls?.[0] ? { uri: displayPost.imageUrls[0] } : undefined}
+              posterStyle={styles.videoPoster}
+              usePoster={!!displayPost.imageUrls?.[0]}
+            />
 
-          {/* Play/Pause icon overlay */}
-          {showPauseIcon && (
-            <View style={styles.videoPlayOverlay}>
-              <View style={styles.videoPlayButton}>
-                <Ionicons name={userPaused ? 'pause' : 'play'} size={scale(40)} color="white" />
+            {/* Play/Pause icon overlay */}
+            {showPauseIcon && (
+              <View style={styles.videoPlayOverlay}>
+                <View style={styles.videoPlayButton}>
+                  <Ionicons name={userPaused ? 'pause' : 'play'} size={scale(40)} color="white" />
+                </View>
               </View>
-            </View>
-          )}
-        </TouchableOpacity>
+            )}
+          </TouchableOpacity>
 
-        {/* Mute/Unmute button */}
-        <TouchableOpacity
-          style={styles.videoMuteButton}
-          onPress={toggleMute}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name={isMuted ? 'volume-mute' : 'volume-high'}
-            size={scale(18)}
-            color="white"
-          />
-        </TouchableOpacity>
+          {/* Mute/Unmute button */}
+          <TouchableOpacity
+            style={styles.videoMuteButton}
+            onPress={toggleMute}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name={isMuted ? 'volume-mute' : 'volume-high'}
+              size={scale(18)}
+              color="white"
+            />
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -1203,8 +1218,8 @@ const PostCard: React.FC<PostCardProps> = ({
           </Text>
         </TouchableOpacity>
 
-        {/* Mensaje privado */}
-        {!isOwnPost && postAuthor && (
+        {/* Mensaje privado - ocultar si es post propio o del autor del displayPost */}
+        {!isOwnPost && postAuthor && displayPost.userId !== activeProfile?.uid && displayPost.userId !== user?.uid && (
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => { if (!user) { navigateToRegister(); return; } onPrivateMessage(displayPost.userId, {
@@ -1258,50 +1273,52 @@ const PostCard: React.FC<PostCardProps> = ({
               onPress={() => setMenuVisible(false)}
             />
           </View>
-          <Animated.View style={[
-            styles.menuDropdown,
-            {
-              backgroundColor: theme.colors.card,
-              opacity: menuOpacity,
-              transform: [
-                { scale: menuScale },
-                { translateY: Animated.multiply(menuScale.interpolate({
-                  inputRange: [0.9, 1],
-                  outputRange: [-10, 0],
-                }), 1) }
-              ],
-            }
-          ]}>
-            {/* Eliminar - solo para posts propios */}
-            {isOwnPost && (
-              <TouchableOpacity
-                style={[
-                  styles.menuOption,
-                  {
-                    borderBottomColor: theme.colors.border,
-                    borderBottomWidth: 0.5,
-                  }
-                ]}
-                onPress={handleDeletePost}
-              >
-                <Ionicons name="trash-outline" size={20} color="#FF3B30" />
-                <Text style={[styles.menuOptionText, { color: '#FF3B30' }]}>
-                  Eliminar post
-                </Text>
+          {Platform.OS === 'web' ? (
+            <View style={[styles.menuDropdown, { backgroundColor: theme.colors.card }]}>
+              {isOwnPost && (
+                <TouchableOpacity
+                  style={[styles.menuOption, { borderBottomColor: theme.colors.border, borderBottomWidth: 0.5 }]}
+                  onPress={handleDeletePost}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+                  <Text style={[styles.menuOptionText, { color: '#FF3B30' }]}>Eliminar post</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={styles.menuOption} onPress={handleReportPost}>
+                <Ionicons name="flag-outline" size={20} color={theme.colors.textSecondary} />
+                <Text style={[styles.menuOptionText, { color: theme.colors.text }]}>Reportar publicación</Text>
               </TouchableOpacity>
-            )}
-
-            {/* Reportar - disponible para todos los posts */}
-            <TouchableOpacity
-              style={styles.menuOption}
-              onPress={handleReportPost}
-            >
-              <Ionicons name="flag-outline" size={20} color={theme.colors.textSecondary} />
-              <Text style={[styles.menuOptionText, { color: theme.colors.text }]}>
-                Reportar publicación
-              </Text>
-            </TouchableOpacity>
-          </Animated.View>
+            </View>
+          ) : (
+            <Animated.View style={[
+              styles.menuDropdown,
+              {
+                backgroundColor: theme.colors.card,
+                opacity: menuOpacity,
+                transform: [
+                  { scale: menuScale },
+                  { translateY: Animated.multiply(menuScale.interpolate({
+                    inputRange: [0.9, 1],
+                    outputRange: [-10, 0],
+                  }), 1) }
+                ],
+              }
+            ]}>
+              {isOwnPost && (
+                <TouchableOpacity
+                  style={[styles.menuOption, { borderBottomColor: theme.colors.border, borderBottomWidth: 0.5 }]}
+                  onPress={handleDeletePost}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+                  <Text style={[styles.menuOptionText, { color: '#FF3B30' }]}>Eliminar post</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={styles.menuOption} onPress={handleReportPost}>
+                <Ionicons name="flag-outline" size={20} color={theme.colors.textSecondary} />
+                <Text style={[styles.menuOptionText, { color: theme.colors.text }]}>Reportar publicación</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
         </>
       )}
 
@@ -1669,6 +1686,21 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
     height: scale(350),
     backgroundColor: '#000',
+  },
+  videoContainerWeb: {
+    height: 'auto',
+    aspectRatio: 16 / 9,
+    backgroundColor: '#1a1a1a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoPhoneFrame: {
+    width: '45%',
+    aspectRatio: 9 / 16,
+    borderRadius: scale(16),
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    position: 'relative',
   },
   videoTouchable: {
     width: '100%',

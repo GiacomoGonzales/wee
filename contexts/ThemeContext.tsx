@@ -96,11 +96,13 @@ interface ThemeProviderProps {
   children: ReactNode;
 }
 
+const isWeb = Platform.OS === 'web';
+
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const [themeMode, setThemeModeState] = useState<ThemeMode>('light');
   const [systemColorScheme, setSystemColorScheme] = useState<ColorSchemeName>(Appearance.getColorScheme());
 
-  // Dos overlays: uno blanco (tapa al ir light→dark), uno negro (tapa al ir dark→light)
+  // Overlays for smooth theme transitions (mobile only)
   const lightOverlay = useRef(new Animated.Value(0)).current;
   const darkOverlay = useRef(new Animated.Value(0)).current;
   const needsFadeRef = useRef<'light' | 'dark' | null>(null);
@@ -122,7 +124,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
 
   const theme = getEffectiveTheme();
 
-  // Sincronizar navigation bar y status bar con el tema
+  // Sincronizar navigation bar y status bar con el tema (Android only)
   useEffect(() => {
     if (Platform.OS === 'android') {
       NavigationBar.setBackgroundColorAsync(theme.colors.background);
@@ -132,31 +134,36 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     }
   }, [theme]);
 
-  // Fade-out after theme render
+  // Fade-out after theme render (mobile only)
   useEffect(() => {
-    if (needsFadeRef.current) {
-      const overlay = needsFadeRef.current === 'light' ? lightOverlay : darkOverlay;
-      needsFadeRef.current = null;
+    if (isWeb || !needsFadeRef.current) return;
 
-      Animated.timing(overlay, {
-        toValue: 0,
-        duration: 800,
-        useNativeDriver: true,
-      }).start();
-    }
+    const overlay = needsFadeRef.current === 'light' ? lightOverlay : darkOverlay;
+    needsFadeRef.current = null;
+
+    Animated.timing(overlay, {
+      toValue: 0,
+      duration: 800,
+      useNativeDriver: true,
+    }).start();
   }, [themeMode]);
 
   const setThemeMode = (mode: ThemeMode) => {
+    // Web: instant theme change, no animation
+    if (isWeb) {
+      setThemeModeState(mode);
+      return;
+    }
+
+    // Mobile: animated transition
     const currentDark = theme.dark;
     const targetDark = mode === 'dark';
 
     if (currentDark !== targetDark) {
       if (currentDark) {
-        // Estamos en dark, vamos a light → tapar con overlay NEGRO
         darkOverlay.setValue(1);
         needsFadeRef.current = 'dark';
       } else {
-        // Estamos en light, vamos a dark → tapar con overlay BLANCO
         lightOverlay.setValue(1);
         needsFadeRef.current = 'light';
       }
@@ -165,6 +172,16 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     setThemeModeState(mode);
   };
 
+  // Web: simple wrapper without overlays
+  if (isWeb) {
+    return (
+      <ThemeContext.Provider value={{ theme, themeMode, setThemeMode }}>
+        <View style={styles.wrapper}>{children}</View>
+      </ThemeContext.Provider>
+    );
+  }
+
+  // Mobile: wrapper with animated overlays
   return (
     <ThemeContext.Provider value={{ theme, themeMode, setThemeMode }}>
       <View style={styles.wrapper}>

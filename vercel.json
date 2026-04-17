@@ -1,26 +1,11 @@
 {
-  "buildCommand": "npx expo export -p web && cp public/privacy-policy.html public/support.html public/terms.html public/landing.html public/app.html dist/ && cp -r public/img dist/img",
+  "buildCommand": "npx expo export -p web && cp public/privacy-policy.html public/support.html public/terms.html dist/",
   "outputDirectory": "dist",
+  "framework": null,
   "rewrites": [
-    {
-      "source": "/privacy",
-      "destination": "/privacy-policy.html"
-    },
-    {
-      "source": "/terms",
-      "destination": "/terms.html"
-    },
-    {
-      "source": "/support",
-      "destination": "/support.html"
-    },
-    {
-      "source": "/app",
-      "destination": "/app.html"
-    },
-    {
-      "source": "/",
-      "destination": "/landing.html"
-    }
+    { "source": "/privacy", "destination": "/privacy-policy.html" },
+    { "source": "/terms", "destination": "/terms.html" },
+    { "source": "/support", "destination": "/support.html" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

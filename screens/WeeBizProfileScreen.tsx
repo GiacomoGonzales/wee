@@ -174,7 +174,18 @@ const WeeBizProfileScreen: React.FC = () => {
         bizOwnerData,
       );
 
-      navigation.navigate('Conversation' as any, { conversationId });
+      // Navigate to nested Conversation screen inside Inbox tab
+      navigation.navigate('Main' as any, {
+        screen: 'Inbox',
+        params: {
+          screen: 'Conversation',
+          params: {
+            conversationId,
+            otherUserId: business.ownerId,
+            otherUserData: bizOwnerData,
+          },
+        },
+      });
     } catch (e) {
       console.error('Error opening conversation:', e);
       Alert.alert('Error', 'No se pudo abrir el chat.');

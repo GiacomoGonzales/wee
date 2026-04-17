@@ -9,7 +9,11 @@ import {
   Dimensions,
   Alert,
   Image,
+  Linking,
+  Platform,
 } from 'react-native';
+
+const isWeb = Platform.OS === 'web';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -80,20 +84,48 @@ const DrawerMenu: React.FC<DrawerMenuProps> = ({ visible, onClose }) => {
   }, [realUid, hasBizProfile]);
 
   useEffect(() => {
-    if (visible) {
-      Animated.parallel([
-        Animated.timing(translateX, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-        Animated.timing(overlayOpacity, {
-          toValue: 1,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-      ]).start();
+    if (isWeb) {
+      // Web: instant show/hide without animation
+      translateX.setValue(visible ? 0 : -DRAWER_WIDTH);
+      overlayOpacity.setValue(visible ? 1 : 0);
     } else {
+      // Mobile: animated
+      if (visible) {
+        Animated.parallel([
+          Animated.timing(translateX, {
+            toValue: 0,
+            duration: 250,
+            useNativeDriver: true,
+          }),
+          Animated.timing(overlayOpacity, {
+            toValue: 1,
+            duration: 250,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      } else {
+        Animated.parallel([
+          Animated.timing(translateX, {
+            toValue: -DRAWER_WIDTH,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(overlayOpacity, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      }
+    }
+  }, [visible]);
+
+  const closeDrawer = () => {
+    if (isWeb) {
+      // Web: instant close
+      onClose();
+    } else {
+      // Mobile: animated
       Animated.parallel([
         Animated.timing(translateX, {
           toValue: -DRAWER_WIDTH,
@@ -105,30 +137,16 @@ const DrawerMenu: React.FC<DrawerMenuProps> = ({ visible, onClose }) => {
           duration: 200,
           useNativeDriver: true,
         }),
-      ]).start();
+      ]).start(() => {
+        onClose();
+      });
     }
-  }, [visible]);
-
-  const closeDrawer = () => {
-    Animated.parallel([
-      Animated.timing(translateX, {
-        toValue: -DRAWER_WIDTH,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-      Animated.timing(overlayOpacity, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      onClose();
-    });
   };
 
   const handleNavigate = (screen: string) => {
     closeDrawer();
-    // Small delay to let the drawer close animation play
+    // Small delay to let the drawer close animation play (not needed on web)
+    const delay = isWeb ? 0 : 220;
     setTimeout(() => {
       const tabNav = navigation.getParent();
       if (tabNav) {
@@ -136,7 +154,7 @@ const DrawerMenu: React.FC<DrawerMenuProps> = ({ visible, onClose }) => {
       } else {
         navigation.navigate(screen);
       }
-    }, 220);
+    }, delay);
   };
 
   const handleExploreCommunities = () => {
@@ -177,7 +195,8 @@ const DrawerMenu: React.FC<DrawerMenuProps> = ({ visible, onClose }) => {
     { label: 'Contactos', icon: 'people-outline', action: showComingSoon },
     { label: 'Comunidades', icon: 'globe-outline', action: handleExploreCommunities },
     { label: 'WeëTalk', icon: 'chatbubble-outline', action: () => handleNavigate('Inbox') },
-    { label: 'Créditos', icon: 'wallet-outline', action: () => handleNavigate('Wallet') },
+    // Créditos oculto temporalmente - requiere In-App Purchases para App Store
+    // { label: 'Créditos', icon: 'wallet-outline', action: () => handleNavigate('Wallet') },
     { label: 'Reweërds', icon: 'gift-outline', action: showComingSoon },
     { label: 'Weë Biz', icon: 'business-outline', action: () => {
       closeDrawer();
@@ -201,7 +220,14 @@ const DrawerMenu: React.FC<DrawerMenuProps> = ({ visible, onClose }) => {
         closeDrawer();
       },
     }] : []),
-    { label: 'Términos y condiciones', icon: 'document-text-outline', action: showComingSoon, separator: true },
+    { label: 'Términos y condiciones', icon: 'document-text-outline', action: () => {
+      closeDrawer();
+      Linking.openURL('https://wee.zone/terms');
+    }, separator: true },
+    { label: 'Política de privacidad', icon: 'shield-checkmark-outline', action: () => {
+      closeDrawer();
+      Linking.openURL('https://wee.zone/privacy');
+    }},
     { label: 'Cerrar sesión', icon: 'log-out-outline', action: handleLogout },
   ];
 

@@ -122,6 +122,7 @@ export interface UserProfile {
     background: string;
     photoStyle: string;
   };
+  aiAvatarGenerationCount?: number; // Contador de generaciones de avatar IA (límite temporal)
 }
 
 export interface Comment {
@@ -523,6 +524,8 @@ export const postsService = {
     let cursor = lastDoc || undefined;
     let lastVisible: DocumentSnapshot | null = null;
 
+    console.log('🔍 getVideoPostsPaginated - limit:', limitCount, 'communitySlug:', communitySlug || 'TODOS');
+
     // Keep fetching until we have enough video posts or run out of data
     while (allVideoPosts.length < limitCount) {
       const filters = communitySlug
@@ -538,9 +541,11 @@ export const postsService = {
         'desc'
       );
 
+      console.log('🔍 Posts obtenidos:', result.documents.length);
       if (result.documents.length === 0) break;
 
       const videoPosts = result.documents.filter(p => !!p.videoUrl);
+      console.log('🔍 Posts con videoUrl:', videoPosts.length);
       allVideoPosts = [...allVideoPosts, ...videoPosts];
       lastVisible = result.lastDoc;
       cursor = result.lastDoc || undefined;
@@ -549,6 +554,7 @@ export const postsService = {
       if (result.documents.length < fetchSize) break;
     }
 
+    console.log('🔍 Total videos encontrados:', allVideoPosts.length);
     return {
       documents: allVideoPosts.slice(0, limitCount),
       lastDoc: lastVisible,

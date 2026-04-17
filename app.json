@@ -84,8 +84,10 @@
         "NSCameraUsageDescription": "Weë necesita acceso a tu cámara para que puedas tomar fotos y videos para compartir en tus publicaciones.",
         "NSMicrophoneUsageDescription": "Weë necesita acceso a tu micrófono para grabar audio en tus videos.",
         "NSPhotoLibraryUsageDescription": "Weë necesita acceso a tu galería para que puedas seleccionar fotos y videos para compartir.",
+        "NSPhotoLibraryAddUsageDescription": "Weë necesita permiso para guardar videos en tu galería.",
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "buildNumber": "2"
     },
     "web": {
       "bundler": "metro",
@@ -99,11 +101,19 @@
     },
     "extra": {
       "eas": {
-        "projectId": "31297521-34c6-4238-af4f-e663953af31f"
+        "projectId": "920ff7aa-c0a9-481d-82c0-4e3d57386175"
       }
     },
     "plugins": [
       "expo-web-browser",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Weë necesita acceso a tu galería para guardar videos.",
+          "savePhotosPermission": "Weë necesita permiso para guardar videos en tu galería.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ],
       [
         "expo-notifications",
         {
@@ -120,7 +130,7 @@
       ],
       "react-native-compressor"
     ],
-    "owner": "giacomogonzales",
+    "owner": "giacomogonzales20",
     "updates": {
       "url": "https://u.expo.dev/31297521-34c6-4238-af4f-e663953af31f"
     }

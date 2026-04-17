@@ -43,6 +43,15 @@ export const uploadProfileImageFromUri = async (
   return { fullSize: url, thumbnail: cloudinaryThumb(url, type === 'cover' ? 800 : 200) };
 };
 
+// ─── Banner/Cover image shortcut ────────────────────────────────────
+export const uploadBannerImageFromUri = async (
+  imageUri: string,
+  userId: string,
+  onProgress?: (progress: UploadProgress) => void,
+): Promise<{ fullSize: string; thumbnail: string }> => {
+  return uploadProfileImageFromUri(imageUri, userId, 'cover', onProgress);
+};
+
 // ─── Post image ─────────────────────────────────────────────────────
 
 export const uploadPostImage = async (
