@@ -302,7 +302,7 @@ const WeeBizProductsScreen: React.FC = () => {
     <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => setModalVisible(false)}>
       <KeyboardAvoidingView
         style={[styles.modalOverlay, { backgroundColor: theme.colors.backdrop }]}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
       >
         <View style={[styles.formModal, { backgroundColor: theme.colors.background }]}>
           <View style={styles.formHeader}>

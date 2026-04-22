@@ -79,6 +79,29 @@ const PostDetailScreen: React.FC = () => {
   const { post } = route.params;
   const { userProfile: postAuthor, loading: loadingAuthor } = useUserById(post.userId);
 
+  // Capturar el inset de safe area inicial para evitar fluctuaciones cuando el teclado
+  // se abre/cierra (algunos builds de Android lo recalculan y deja residuos visuales).
+  // Usamos un mínimo más generoso para que el input esté siempre a una distancia
+  // cómoda del fondo desde el primer render (matching la posición post-teclado).
+  const [stableBottomInset] = useState(() => Math.max(insets.bottom, SPACING.xxl));
+
+  // Rastreamos la ALTURA del teclado (no solo visibilidad). En Android deshabilitamos
+  // KeyboardAvoidingView y hacemos el push-up nosotros, así el estado es 100% determinístico.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+  const isKeyboardVisible = keyboardHeight > 0;
+
   // Hook de votación con estado optimista
   const { stats: voteStats, voteAgree, voteDisagree, isLoading: isVoting } = useVote({
     postId: post.id!,
@@ -171,15 +194,18 @@ const PostDetailScreen: React.FC = () => {
 
   // Verificar si el usuario ya votó en la encuesta
   useEffect(() => {
-    if (post.poll && user?.uid) {
+    const currentUid = userProfile?.uid || user?.uid;
+    if (post.poll && currentUid) {
       const voteIndex = post.poll.options.findIndex(opt =>
-        opt.votedBy.includes(user.uid)
+        opt.votedBy.includes(currentUid)
       );
-      if (voteIndex !== -1) {
-        setUserVote(voteIndex);
-      }
+      // IMPORTANTE: siempre setear (incluso a null) para resetear al cambiar
+      // de perfil (real ↔ hidi ↔ biz). Sin esto el voto "persiste" visualmente.
+      setUserVote(voteIndex !== -1 ? voteIndex : null);
+    } else {
+      setUserVote(null);
     }
-  }, [post.poll, user?.uid]);
+  }, [post.poll, userProfile?.uid, user?.uid]);
 
   const getImageHeight = () => {
     if (!imageDimensions) {
@@ -354,7 +380,9 @@ const PostDetailScreen: React.FC = () => {
   };
 
   const handleVote = async (optionIndex: number) => {
-    if (!user || !localPoll || userVote !== null || !post.id) return;
+    // Usar el perfil activo (real, hidi o biz) como identidad del voto
+    const currentUid = userProfile?.uid || user?.uid;
+    if (!currentUid || !localPoll || userVote !== null || !post.id) return;
 
     try {
       // Actualizar localmente de inmediato (optimistic update)
@@ -369,7 +397,7 @@ const PostDetailScreen: React.FC = () => {
             return {
               ...opt,
               votes: opt.votes + 1,
-              votedBy: [...opt.votedBy, user.uid],
+              votedBy: [...opt.votedBy, currentUid],
             };
           }
           return opt;
@@ -377,8 +405,8 @@ const PostDetailScreen: React.FC = () => {
       };
       setLocalPoll(updatedPoll);
 
-      // Guardar el voto en Firestore
-      await postsService.voteInPoll(post.id, optionIndex, user.uid);
+      // Guardar el voto en Firestore con el uid del perfil activo
+      await postsService.voteInPoll(post.id, optionIndex, currentUid);
       console.log('✅ Voto guardado exitosamente en Firestore');
 
     } catch (error) {
@@ -643,12 +671,8 @@ const PostDetailScreen: React.FC = () => {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={-insets.bottom + 8}
-    >
-      {/* Header */}
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      {/* Header — SIEMPRE estático, FUERA del wrapper del teclado (como ConversationScreen) */}
       <View style={[styles.header, {
         backgroundColor: theme.colors.card,
         borderBottomColor: theme.colors.border,
@@ -665,7 +689,16 @@ const PostDetailScreen: React.FC = () => {
         <View style={styles.headerRight} />
       </View>
 
-      {/* Content */}
+      {/* Scroll + Input area — ajustada al teclado con marginBottom manual.
+          Trackea keyboardHeight via Keyboard.addListener. El header queda
+          estático (igual que ConversationScreen). */}
+      <View
+        style={[
+          styles.flex1,
+          { marginBottom: keyboardHeight > 0 ? keyboardHeight : 0 },
+        ]}
+      >
+        {/* Content */}
       <ScrollView
         style={styles.scrollContent}
         contentContainerStyle={styles.scrollContentContainer}
@@ -919,7 +952,9 @@ const PostDetailScreen: React.FC = () => {
       {/* Comment input */}
       <View style={[styles.commentInputContainer, {
         backgroundColor: theme.colors.background,
-        paddingBottom: insets.bottom || SPACING.sm,
+        // Cuando el teclado está abierto, el teclado ya cubre la nav bar — solo necesitamos
+        // un pequeño gap visual. Cuando está cerrado, respetamos el safe area estable.
+        paddingBottom: isKeyboardVisible ? SPACING.sm : stableBottomInset,
       }]}>
         <View style={styles.avatarContainer}>
           {userProfile && (
@@ -962,7 +997,7 @@ const PostDetailScreen: React.FC = () => {
         </View>
         <TouchableOpacity
           style={[styles.sendButton, {
-            backgroundColor: (commentText.trim() || submittingComment) ? theme.colors.accent : theme.colors.surface,
+            backgroundColor: (commentText.trim() || commentImage || submittingComment) ? theme.colors.accent : theme.colors.surface,
           }]}
           onPress={handleCommentSubmit}
           disabled={(!commentText.trim() && !commentImage) || submittingComment}
@@ -978,6 +1013,7 @@ const PostDetailScreen: React.FC = () => {
           )}
         </TouchableOpacity>
       </View>
+      </View>
 
       {/* Image Viewer Modal */}
       {post.imageUrls && post.imageUrls.length > 0 && (
@@ -988,12 +1024,15 @@ const PostDetailScreen: React.FC = () => {
           onClose={() => setImageViewerVisible(false)}
         />
       )}
-    </KeyboardAvoidingView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  flex1: {
     flex: 1,
   },
   header: {

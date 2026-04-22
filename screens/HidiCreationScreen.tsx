@@ -130,7 +130,7 @@ const HidiCreationScreen: React.FC = () => {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
       >
         <ScrollView
           ref={scrollViewRef}

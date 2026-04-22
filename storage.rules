@@ -2,27 +2,45 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Reglas para imágenes de posts
+    // === Imágenes de posts (legacy — nuevas subidas van a Cloudinary) ===
     match /images/posts/{userId}/{fileName} {
-      allow read: if true; // Cualquiera puede leer posts públicos
-      allow write: if request.auth != null 
+      allow read: if true;
+      allow write: if request.auth != null
                    && request.auth.uid == userId
-                   && request.resource.size < 5 * 1024 * 1024 // Max 5MB
+                   && request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
     }
-    
-    // Reglas para imágenes de perfil
+
+    // === Imágenes de perfil (legacy — nuevas subidas van a Cloudinary) ===
     match /images/profile/{userId}/{fileName} {
-      allow read: if true; // Cualquiera puede leer avatares
-      allow write: if request.auth != null 
+      allow read: if true;
+      allow write: if request.auth != null
                    && request.auth.uid == userId
-                   && request.resource.size < 2 * 1024 * 1024 // Max 2MB
+                   && request.resource.size < 2 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
     }
-    
-    // Fallback: permitir lectura/escritura para usuarios autenticados
-    match /{allPaths=**} {
-      allow read, write: if request.auth != null;
+
+    // === Face-swap: selfie subida por el usuario ===
+    match /users/{userId}/face-swap/{fileName} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null
+                   && request.auth.uid == userId
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
     }
+
+    // === AI Avatar generado por Cloud Function (lectura pública, escritura solo backend) ===
+    match /users/{userId}/ai-avatar/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // === Resultado de avatar-replacement generado por Cloud Function ===
+    match /users/{userId}/avatar-replacement/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Sin catch-all — cualquier otra ruta queda denegada por defecto.
   }
 }

@@ -146,7 +146,7 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({
   const renderPostInfo = () => (
     <KeyboardAvoidingView
       style={[styles.infoContainer, { backgroundColor: theme.colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
       keyboardVerticalOffset={0}
     >
       {/* Header del post */}

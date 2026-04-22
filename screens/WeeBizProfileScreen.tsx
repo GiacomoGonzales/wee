@@ -584,7 +584,7 @@ const WeeBizProfileScreen: React.FC = () => {
         <Modal visible={reviewModalVisible} animationType="slide" transparent onRequestClose={() => setReviewModalVisible(false)}>
           <KeyboardAvoidingView
             style={[styles.reviewModalOverlay, { backgroundColor: theme.colors.backdrop }]}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            behavior="padding"
           >
             <View style={[styles.reviewModal, { backgroundColor: theme.colors.background }]}>
               <View style={styles.reviewModalHeader}>

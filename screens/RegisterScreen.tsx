@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -27,8 +27,19 @@ const RegisterScreen: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const { signUp, signInWithGoogle, signInAnonymously } = useAuth();
+  const { user, signUp, signInWithGoogle, signInAnonymously } = useAuth();
   const navigation = useNavigation<any>();
+
+  // Cerrar la modal automáticamente cuando se detecte que el usuario inició sesión.
+  useEffect(() => {
+    if (user) {
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.getParent()?.goBack?.();
+      }
+    }
+  }, [user, navigation]);
 
   const updateFormData = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));

@@ -232,9 +232,13 @@ const PostCard: React.FC<PostCardProps> = ({
       const voteIndex = post.poll.options.findIndex(opt =>
         opt.votedBy.includes(currentUid)
       );
-      if (voteIndex !== -1) {
-        setUserVote(voteIndex);
-      }
+      // IMPORTANTE: siempre actualizar, incluso cuando no se encontró voto,
+      // para resetear userVote al cambiar de perfil (real ↔ hidi ↔ biz).
+      // Sin esto, el voto del perfil anterior "persistiría" visualmente en el nuevo.
+      setUserVote(voteIndex !== -1 ? voteIndex : null);
+    } else {
+      // Sin usuario o sin encuesta: resetear el estado
+      setUserVote(null);
     }
   }, [post.poll, activeProfile?.uid, user?.uid]);
 

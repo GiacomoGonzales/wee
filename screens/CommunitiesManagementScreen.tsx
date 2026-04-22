@@ -382,7 +382,7 @@ const CommunitiesManagementScreen: React.FC = () => {
       >
         <KeyboardAvoidingView
           style={{ flex: 1, backgroundColor: theme.colors.background }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior="padding"
         >
           {/* Header */}
           <View style={[styles.modalHeader, { paddingTop: insets.top + SPACING.sm, borderBottomColor: theme.colors.border }]}>

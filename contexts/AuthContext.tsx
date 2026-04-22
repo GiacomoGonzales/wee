@@ -25,7 +25,7 @@ if (Platform.OS !== 'web') {
 
     // Configurar Google Sign-In
     GoogleSignin.configure({
-      webClientId: '546769059837-uradjj25om3cgb06h8tvsfu64k0rab3i.apps.googleusercontent.com',
+      webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
       offlineAccess: true,
     });
   } catch (e) {

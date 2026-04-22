@@ -74,23 +74,16 @@ export const pushNotificationService = {
   },
 
   // Guardar el token en el perfil del usuario
-  // TODO: Temporalmente deshabilitado - reactivar cuando se configuren las Cloud Functions
   savePushToken: async (userId: string, token: string): Promise<void> => {
-    // Deshabilitado temporalmente
-    console.log('⏸️ Push token saving disabled temporarily');
-    return;
-    /*
     try {
       const userRef = doc(db, 'users', userId);
       await updateDoc(userRef, {
         pushToken: token,
         pushTokenUpdatedAt: new Date(),
       });
-      console.log('✅ Push token guardado en Firestore');
     } catch (error) {
       console.error('Error guardando push token:', error);
     }
-    */
   },
 
   // Eliminar el token (logout)

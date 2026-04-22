@@ -423,7 +423,10 @@ const CommunityScreen: React.FC = () => {
         renderItem={renderPost}
         keyExtractor={(item: Post) => item.id || item.userId}
         ListHeaderComponent={renderHeader}
-        contentContainerStyle={posts.length === 0 ? styles.emptyContainer : undefined}
+        contentContainerStyle={[
+          posts.length === 0 && styles.emptyContainer,
+          { paddingBottom: insets.bottom + 100 },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

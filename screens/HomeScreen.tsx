@@ -1002,7 +1002,9 @@ const HomeScreen: React.FC = () => {
         keyExtractor={item => item.id || item.userId}
         contentContainerStyle={[
           posts.length === 0 && !hasImmersiveHero && styles.emptyContainer,
-          { paddingBottom: 80 },
+          // Tab bar flota absoluta (height: 56 + insets.bottom). Padding generoso
+          // para que los botones del último post no queden tapados y haya espacio extra.
+          { paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
         onScroll={(event) => {

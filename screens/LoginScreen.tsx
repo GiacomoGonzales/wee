@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,8 +23,21 @@ const LoginScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const { signIn, signInWithGoogle, signInAnonymously, resetPassword } = useAuth();
+  const { user, signIn, signInWithGoogle, signInAnonymously, resetPassword } = useAuth();
   const navigation = useNavigation<any>();
+
+  // Cerrar la modal automáticamente cuando se detecte que el usuario inició sesión.
+  // Más robusto que depender de navigation.goBack() post-await, que puede fallar
+  // si el estado de auth se propaga después del return del signIn.
+  useEffect(() => {
+    if (user) {
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.getParent()?.goBack?.();
+      }
+    }
+  }, [user, navigation]);
 
   const handleEmailLogin = async () => {
     if (!email || !password) {
